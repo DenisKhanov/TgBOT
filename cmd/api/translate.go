@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -54,9 +54,18 @@ func TranslateAPI(text string) (string, error) {
 		logrus.Error(err)
 	}
 
+	detectedLang, err := DetectLangAPI(text)
+	if err != nil {
+		logrus.Error("Ошибка при определении языка: ", err)
+		return "", err
+	}
+	targetLang := "ru"
+	if detectedLang == "ru" {
+		targetLang = "en"
+	}
 	reqBody := TranslateRequest{
-		SourceLanguageCode: "en",
-		TargetLanguageCode: "ru",
+		SourceLanguageCode: detectedLang,
+		TargetLanguageCode: targetLang,
 		Format:             "PLAIN_TEXT",
 		Texts:              []string{text},
 		Speller:            true,
@@ -69,14 +78,12 @@ func TranslateAPI(text string) (string, error) {
 	if err != nil {
 		err = fmt.Errorf("error marshalling JSON: %v", err)
 		logrus.Error(err)
-		fmt.Println(err)
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		err = fmt.Errorf("failed to create request with ctx: %w", err)
 		logrus.Error(err)
-		fmt.Println(err)
 		return "", err
 	}
 
@@ -86,14 +93,12 @@ func TranslateAPI(text string) (string, error) {
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logrus.Error(err)
-		fmt.Println(err)
 		return "", err
 	}
 	defer res.Body.Close()
-	data, err := ioutil.ReadAll(res.Body)
+	data, err := io.ReadAll(res.Body)
 	if err != nil {
 		logrus.Error(err)
-		fmt.Println(err)
 		return "", err
 	}
 	fmt.Println(string(data))
@@ -101,13 +106,13 @@ func TranslateAPI(text string) (string, error) {
 	err = json.Unmarshal(data, &response)
 	if err != nil {
 		logrus.Error(err)
-		fmt.Println(err)
 		return "", err
 	}
 
 	logrus.Info("Статус-код ", res.Status)
+	logrus.Info("Переведенный текст - ", response.Translations[0])
+
 	result := response.Translations[0]
-	fmt.Println(result)
 
 	return result.Text, nil
 }
