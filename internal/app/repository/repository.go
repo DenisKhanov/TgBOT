@@ -20,7 +20,7 @@ type UsersState struct {
 	storageFilePath string
 }
 
-func NewUsersState(envStoragePath string) *UsersState {
+func NewUsersStateMap(envStoragePath string) *UsersState {
 	return &UsersState{
 		BatchBuffer:     make(map[int64]*UserState),
 		storageFilePath: envStoragePath,
