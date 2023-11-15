@@ -19,12 +19,18 @@ func main() {
 	logrus.Infof("BOT started with configuration logs level: %v", cfg.EnvLogs)
 
 	logcfg.RunLoggerConfig(cfg.EnvLogs)
-	token, err := os.ReadFile("tokenBOT.txt")
-	if err != nil {
-		logrus.Error(err)
+	var token string
+	if cfg.EnvToken == "" {
+		buffer, err := os.ReadFile("tokenBOT.txt")
+		if err != nil {
+			logrus.Error(err)
+		}
+		token = string(buffer)
+	} else {
+		token = cfg.EnvToken
 	}
 
-	bot, err := tgbotapi.NewBotAPI(string(token))
+	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		logrus.Panic(err)
 	}
