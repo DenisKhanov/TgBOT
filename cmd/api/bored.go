@@ -20,14 +20,21 @@ type ResponseAPI struct {
 	Link          string  `json:"link"`
 	Key           string  `json:"key"`
 }
+type BoringAPI struct {
+	endpoint string
+	ResponseAPI
+}
 
-func BoredAPI() (string, error) {
-	endpoint := "http://www.boredapi.com/api/activity/"
+func NewBoringAPI(endpoint string) *BoringAPI {
+	return &BoringAPI{endpoint: endpoint}
+}
+
+func (bor *BoringAPI) BoredAPI() (string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bor.endpoint, nil)
 	if err != nil {
 		err = fmt.Errorf("failed to create request with ctx: %w", err)
 		logrus.Error(err)
@@ -52,10 +59,6 @@ func BoredAPI() (string, error) {
 
 	logrus.Info("Статус-код ", res.Status)
 	fmt.Println(response.Activity)
-	ruActivity, errTrans := TranslateAPI(response.Activity)
-	if errTrans != nil {
-		return "", errTrans
-	}
 
-	return ruActivity, nil
+	return response.Activity, nil
 }

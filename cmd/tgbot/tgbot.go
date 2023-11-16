@@ -1,10 +1,12 @@
 package main
 
 import (
+	"GoProgects/PetProjects/cmd/api"
 	"GoProgects/PetProjects/internal/app/config"
 	"GoProgects/PetProjects/internal/app/logcfg"
 	"GoProgects/PetProjects/internal/app/repository"
 	"GoProgects/PetProjects/internal/app/services"
+	"context"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -13,30 +15,58 @@ import (
 	"time"
 )
 
+//func  GetUpdatesChan(config UpdateConfig) UpdatesChannel {
+//	ch := make(chan Update, tgbotapi.Buffer)
+//
+//	go func() {
+//		for {
+//			select {
+//			case <-bot.shutdownChannel:
+//				close(ch)
+//				return
+//			default:
+//			}
+//
+//			updates, err := bot.GetUpdates(config)
+//			if err != nil {
+//				log.Println(err)
+//				log.Println("Failed to get updates, retrying in 3 seconds...")
+//				time.Sleep(time.Second * 3)
+//
+//				continue
+//			}
+//
+//			for _, update := range updates {
+//				if update.UpdateID >= config.Offset {
+//					config.Offset = update.UpdateID + 1
+//					ch <- update
+//				}
+//			}
+//		}
+//	}()
+//
+//	return ch
+//}
+
 func main() {
 
 	cfg := config.NewConfig()
 	logrus.Infof("BOT started with configuration logs level: %v", cfg.EnvLogs)
 
 	logcfg.RunLoggerConfig(cfg.EnvLogs)
-	var token string
-	if cfg.EnvToken == "" {
-		buffer, err := os.ReadFile("tokenBOT.txt")
-		if err != nil {
-			logrus.Error(err)
-		}
-		token = string(buffer)
-	} else {
-		token = cfg.EnvToken
-	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := tgbotapi.NewBotAPI(cfg.EnvBotToken)
 	if err != nil {
 		logrus.Panic(err)
 	}
 	bot.Debug = true
+
 	usersState := repository.NewUsersStateMap(cfg.EnvStoragePath)
-	myBot := services.NewTgBot(usersState, bot)
+	myBoringAPI := api.NewBoringAPI("http://www.boredapi.com/api/activity/")
+	myYandexAPI := api.NewYandexAPI("https://translate.api.cloud.yandex.net/translate/v2/translate",
+		"https://translate.api.cloud.yandex.net/translate/v2/detect", cfg.EnvYandexToken)
+	myBot := services.NewTgBot(myBoringAPI, myYandexAPI, usersState, bot)
+
 	if err = myBot.Repository.ReadFileToMemoryURL(); err != nil {
 		logrus.Error(err)
 	}
@@ -49,29 +79,35 @@ func main() {
 	defer ticker.Stop()
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Горутина для обработки сигналов остановки и тикера
 	go func() {
 		for {
 			select {
-			case <-ticker.C:
+			case <-ticker.C: // Событие от тикера
 				if err = myBot.Repository.SaveBatchToFile(); err != nil {
 					logrus.Error("Error while saving state on ticker: ", err)
 				}
-			case sig := <-signalChan:
+			case sig := <-signalChan: // При получении сигнала остановки
 				logrus.Infof("Received %v signal, shutting down bot...", sig)
 				if err = myBot.Repository.SaveBatchToFile(); err != nil {
 					logrus.Error("Error while saving state on shutdown: ", err)
 				}
+				cancel() // Отправляем сигнал об остановке в основной цикл
 				return
 			}
 		}
 	}()
 
-	for update := range bot.GetUpdatesChan(updateConfig) {
+	// Основной цикл обработки обновлений
+	for update := range bot.GetUpdatesChan(ctx, updateConfig) { // Получение обновлений
 		if update.InlineQuery != nil {
 			myBot.HandleInlineQuery(bot, update.InlineQuery)
 		} else {
 			myBot.UpdateProcessing(&update, usersState)
-		}
+		} // Когда получен сигнал об остановке
 	}
+	logrus.Info("Shutting down main loop...")
+
 }
