@@ -1,7 +1,6 @@
 package services
 
 import (
-	"GoProgects/PetProjects/cmd/api"
 	"GoProgects/PetProjects/internal/app/constant"
 	"GoProgects/PetProjects/internal/app/repository"
 	"fmt"
@@ -16,15 +15,26 @@ type Repository interface {
 	SaveBatchToFile() error
 	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating bool)
 }
+type Boring interface {
+	BoredAPI() (string, error)
+}
+type Yandex interface {
+	TranslateAPI(text string) (string, error)
+	DetectLangAPI(text string) (string, error)
+}
 
 type TgBotServices struct {
+	Boring     Boring
+	Yandex     Yandex
 	Repository Repository
 	ChatID     int64
 	Bot        *tgbotapi.BotAPI
 }
 
-func NewTgBot(repository Repository, bot *tgbotapi.BotAPI) *TgBotServices {
+func NewTgBot(boring Boring, yandex Yandex, repository Repository, bot *tgbotapi.BotAPI) *TgBotServices {
 	return &TgBotServices{
+		Boring:     boring,
+		Yandex:     yandex,
 		Repository: repository,
 		Bot:        bot,
 	}
@@ -63,10 +73,11 @@ func (b *TgBotServices) showMenu() {
 }
 
 func (b *TgBotServices) generateActivityMsg() {
-	text, errAPI := api.BoredAPI()
+	text, err := b.Boring.BoredAPI()
+	ruText, err := b.Yandex.TranslateAPI(text)
 	var msg tgbotapi.MessageConfig
-	if errAPI == nil {
-		msg = tgbotapi.NewMessage(b.ChatID, text)
+	if err == nil {
+		msg = tgbotapi.NewMessage(b.ChatID, ruText)
 	} else {
 		msg = tgbotapi.NewMessage(b.ChatID, "К сожалению в данный момент я не могу дотянуться до знаний")
 
@@ -79,7 +90,7 @@ func (b *TgBotServices) sendSorryMsg(update *tgbotapi.Update) {
 	b.Bot.Send(msg)
 }
 func (b *TgBotServices) translateText(update *tgbotapi.Update) {
-	translatedText, err := api.TranslateAPI(update.Message.Text)
+	translatedText, err := b.Yandex.TranslateAPI(update.Message.Text)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -105,10 +116,11 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 		var name string
 
 		if currentInput != "" {
-			text, err = api.TranslateAPI(currentInput)
+			text, err = b.Yandex.TranslateAPI(currentInput)
 			name = "Перевести введенный текст"
 		} else if currentInput == "" {
-			text, err = api.BoredAPI()
+			text, err = b.Boring.BoredAPI()
+			text, err = b.Yandex.TranslateAPI(text)
 			name = "Предложи чем мне заняться"
 		} else {
 			// Если нет ввода, прерываем выполнение функции
