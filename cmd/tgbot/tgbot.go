@@ -3,6 +3,7 @@ package main
 import (
 	"GoProgects/PetProjects/cmd/api"
 	"GoProgects/PetProjects/internal/app/config"
+	"GoProgects/PetProjects/internal/app/custom"
 	"GoProgects/PetProjects/internal/app/logcfg"
 	"GoProgects/PetProjects/internal/app/repository"
 	"GoProgects/PetProjects/internal/app/services"
@@ -55,16 +56,16 @@ func main() {
 
 	logcfg.RunLoggerConfig(cfg.EnvLogs)
 
-	bot, err := tgbotapi.NewBotAPI(cfg.EnvBotToken)
+	bot, err := tgbotapi.NewBotAPI("6862982575:AAGLa388PCfKCuMNuJHADnMFTypAadmisUU")
 	if err != nil {
 		logrus.Panic(err)
 	}
 	bot.Debug = true
-
+	customBot := &custom.BotAPICustom{BotAPI: bot}
 	usersState := repository.NewUsersStateMap(cfg.EnvStoragePath)
 	myBoringAPI := api.NewBoringAPI("http://www.boredapi.com/api/activity/")
 	myYandexAPI := api.NewYandexAPI("https://translate.api.cloud.yandex.net/translate/v2/translate",
-		"https://translate.api.cloud.yandex.net/translate/v2/detect", cfg.EnvYandexToken)
+		"https://translate.api.cloud.yandex.net/translate/v2/detect", "Api-Key AQVNy_MA0t8lLOVQZw4kny8GJk8GzOOWRGUtDJ86")
 	myBot := services.NewTgBot(myBoringAPI, myYandexAPI, usersState, bot)
 
 	if err = myBot.Repository.ReadFileToMemoryURL(); err != nil {
@@ -101,7 +102,7 @@ func main() {
 	}()
 
 	// Основной цикл обработки обновлений
-	for update := range bot.GetUpdatesChan(ctx, updateConfig) { // Получение обновлений
+	for update := range customBot.GetUpdatesChan(ctx, updateConfig) { // Получение обновлений
 		if update.InlineQuery != nil {
 			myBot.HandleInlineQuery(bot, update.InlineQuery)
 		} else {
