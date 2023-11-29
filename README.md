@@ -1,3 +1,4 @@
+# RU  
 # TgBOT  
 TgBOT - это универсальный Telegram бот (проект который я пишу для удовольствия и изучения новых технологий), предназначенный для работы в инлайн режиме с рядом уникальных функций.
 
@@ -18,7 +19,7 @@ Telegram Bot API
 Контрибуция  
 Любые предложения по улучшению бота и его функционала приветствуются. Для предложений и сообщений об ошибках, пожалуйста, используйте систему Issues на GitHub.
 
-#EN
+#EN  
 #TgBOT  
 TgBOT is a versatile Telegram bot (a project I am developing for pleasure and to learn new technologies), designed to work in inline mode with a number of unique features.
 
