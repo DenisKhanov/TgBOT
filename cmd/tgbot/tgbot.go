@@ -16,39 +16,6 @@ import (
 	"time"
 )
 
-//func  GetUpdatesChan(config UpdateConfig) UpdatesChannel {
-//	ch := make(chan Update, tgbotapi.Buffer)
-//
-//	go func() {
-//		for {
-//			select {
-//			case <-bot.shutdownChannel:
-//				close(ch)
-//				return
-//			default:
-//			}
-//
-//			updates, err := bot.GetUpdates(config)
-//			if err != nil {
-//				log.Println(err)
-//				log.Println("Failed to get updates, retrying in 3 seconds...")
-//				time.Sleep(time.Second * 3)
-//
-//				continue
-//			}
-//
-//			for _, update := range updates {
-//				if update.UpdateID >= config.Offset {
-//					config.Offset = update.UpdateID + 1
-//					ch <- update
-//				}
-//			}
-//		}
-//	}()
-//
-//	return ch
-//}
-
 func main() {
 
 	cfg := config.NewConfig()
@@ -56,7 +23,7 @@ func main() {
 
 	logcfg.RunLoggerConfig(cfg.EnvLogs)
 
-	bot, err := tgbotapi.NewBotAPI("6862982575:AAGLa388PCfKCuMNuJHADnMFTypAadmisUU")
+	bot, err := tgbotapi.NewBotAPI(cfg.EnvBotToken)
 	if err != nil {
 		logrus.Panic(err)
 	}
@@ -65,7 +32,7 @@ func main() {
 	usersState := repository.NewUsersStateMap(cfg.EnvStoragePath)
 	myBoringAPI := api.NewBoringAPI("http://www.boredapi.com/api/activity/")
 	myYandexAPI := api.NewYandexAPI("https://translate.api.cloud.yandex.net/translate/v2/translate",
-		"https://translate.api.cloud.yandex.net/translate/v2/detect", "Api-Key AQVNy_MA0t8lLOVQZw4kny8GJk8GzOOWRGUtDJ86")
+		"https://translate.api.cloud.yandex.net/translate/v2/detect", cfg.EnvYandexToken)
 	myBot := services.NewTgBot(myBoringAPI, myYandexAPI, usersState, bot)
 
 	if err = myBot.Repository.ReadFileToMemoryURL(); err != nil {
