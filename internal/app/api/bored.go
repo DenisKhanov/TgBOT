@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
-	"log"
+	"io"
 	"net/http"
 	"time"
 )
@@ -26,7 +25,9 @@ type BoringAPI struct {
 }
 
 func NewBoringAPI(endpoint string) *BoringAPI {
-	return &BoringAPI{endpoint: endpoint}
+	return &BoringAPI{
+		endpoint: endpoint,
+	}
 }
 
 func (bor *BoringAPI) BoredAPI() (string, error) {
@@ -46,9 +47,9 @@ func (bor *BoringAPI) BoredAPI() (string, error) {
 		return "", err
 	}
 	defer res.Body.Close()
-	data, err := ioutil.ReadAll(res.Body)
+	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		log.Print(err)
+		logrus.Error(err)
 		return "", err
 	}
 	var response ResponseAPI

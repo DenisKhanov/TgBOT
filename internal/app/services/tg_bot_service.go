@@ -14,29 +14,28 @@ type Repository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
 	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating bool)
-}
-type Boring interface {
-	BoredAPI() (string, error)
-}
-type Yandex interface {
-	TranslateAPI(text string) (string, error)
-	DetectLangAPI(text string) (string, error)
+	SaveUserYandexSmartHomeToken(chatID int64, token string)
+	GetUserYandexSmartHomeToken(chatID int64) (string, error)
 }
 
 type TgBotServices struct {
-	Boring     Boring
-	Yandex     Yandex
-	Repository Repository
-	ChatID     int64
-	Bot        *tgbotapi.BotAPI
+	Boring          Boring
+	YandexTranslate YandexTranslate
+	YandexAuth      YandexAuth
+	YandexSmartHome YandexSmartHome
+	Repository      Repository
+	ChatID          int64
+	Bot             *tgbotapi.BotAPI
 }
 
-func NewTgBot(boring Boring, yandex Yandex, repository Repository, bot *tgbotapi.BotAPI) *TgBotServices {
+func NewTgBot(boring Boring, yandex YandexTranslate, yandexAuth YandexAuth, yandexSmartHome YandexSmartHome, repository Repository, bot *tgbotapi.BotAPI) *TgBotServices {
 	return &TgBotServices{
-		Boring:     boring,
-		Yandex:     yandex,
-		Repository: repository,
-		Bot:        bot,
+		Boring:          boring,
+		YandexTranslate: yandex,
+		YandexAuth:      yandexAuth,
+		YandexSmartHome: yandexSmartHome,
+		Repository:      repository,
+		Bot:             bot,
 	}
 }
 
@@ -62,40 +61,23 @@ func (b *TgBotServices) askToPrintIntro() {
 	)
 	b.Bot.Send(msg)
 }
-func (b *TgBotServices) showMenu() {
-	msg := tgbotapi.NewMessage(b.ChatID, "Выберите способность:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_WHAT_TO_DO, constant.BUTTON_CODE_WHAT_TO_DO),
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_TRANSLATE, constant.BUTTON_CODE_TRANSLATE)),
-	)
-	b.Bot.Send(msg)
-}
 
-func (b *TgBotServices) generateActivityMsg() {
-	text, err := b.Boring.BoredAPI()
-	ruText, err := b.Yandex.TranslateAPI(text)
-	var msg tgbotapi.MessageConfig
-	if err == nil {
-		msg = tgbotapi.NewMessage(b.ChatID, ruText)
-	} else {
-		msg = tgbotapi.NewMessage(b.ChatID, "К сожалению в данный момент я не могу дотянуться до знаний")
-
-	}
-	b.Bot.Send(msg)
-}
 func (b *TgBotServices) sendSorryMsg(update *tgbotapi.Update) {
 	msg := tgbotapi.NewMessage(b.ChatID, "Я пока этого не умею, но я учусь")
 	msg.ReplyToMessageID = update.Message.MessageID
 	b.Bot.Send(msg)
 }
-func (b *TgBotServices) translateText(update *tgbotapi.Update) {
-	translatedText, err := b.Yandex.TranslateAPI(update.Message.Text)
-	if err != nil {
-		logrus.Error(err)
-	}
-	msg := tgbotapi.NewMessage(b.ChatID, translatedText)
-	msg.ReplyToMessageID = update.Message.MessageID
+
+func (b *TgBotServices) showHeadMenu() {
+	msg := tgbotapi.NewMessage(b.ChatID, "Выберите способность:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_WHAT_TO_DO, constant.BUTTON_CODE_WHAT_TO_DO)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_TRANSLATE, constant.BUTTON_CODE_TRANSLATE)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_DDIALOGS, constant.BUTTON_CODE_YANDEX_DDIALOGS)),
+	)
 	b.Bot.Send(msg)
 }
 
@@ -116,11 +98,11 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 		var name string
 
 		if currentInput != "" {
-			text, err = b.Yandex.TranslateAPI(currentInput)
+			text, err = b.YandexTranslate.TranslateAPI(currentInput)
 			name = "Перевести введенный текст"
 		} else if currentInput == "" {
 			text, err = b.Boring.BoredAPI()
-			text, err = b.Yandex.TranslateAPI(text)
+			text, err = b.YandexTranslate.TranslateAPI(text)
 			name = "Предложи чем мне заняться"
 		} else {
 			// Если нет ввода, прерываем выполнение функции
@@ -146,49 +128,35 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 	})
 }
 
-//func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.InlineQuery) {
-//	// Создаем inline-клавиатуру
-//	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-//		tgbotapi.NewInlineKeyboardRow(
-//			tgbotapi.NewInlineKeyboardButtonData("Перевести текст", "text_translate"),
-//			tgbotapi.NewInlineKeyboardButtonData("Чем заняться", "what_should_i_do"),
-//		),
-//	)
-//
-//	// Создаем inline-ответ
-//	article := tgbotapi.NewInlineQueryResultArticle(query.ID, "Выберите опцию", "Нажмите на одну из кнопок")
-//	article.ReplyMarkup = &keyboard
-//
-//	// Отправляем ответ
-//	inlineConf := tgbotapi.InlineConfig{
-//		InlineQueryID: query.ID,
-//		Results:       []interface{}{article},
-//		CacheTime:     0,
-//	}
-//	if _, err := bot.Send(inlineConf); err != nil {
-//		log.Println("Ошибка при отправке inline-ответа:", err)
-//	}
-//}
-
 func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *repository.UsersState) {
 	var choiceCode string
 	if update.CallbackQuery != nil && update.CallbackQuery.Data != "" {
 		b.ChatID = update.CallbackQuery.Message.Chat.ID
 		choiceCode = update.CallbackQuery.Data
-		fmt.Println(choiceCode)
 
 		logrus.Infof("[%T] %s", time.Now(), choiceCode)
 		switch choiceCode {
 		case constant.BUTTON_CODE_PRINT_INTRO:
 			b.printIntro()
-			b.showMenu()
+			b.showHeadMenu()
 		case constant.BUTTON_CODE_SKIP_INTRO:
-			b.showMenu()
+			b.showHeadMenu()
 		case constant.BUTTON_CODE_PRINT_MENU:
-			b.showMenu()
+			b.showHeadMenu()
 		case constant.BUTTON_CODE_WHAT_TO_DO:
-			b.generateActivityMsg()
-			b.showMenu()
+			b.GenerateActivityMsg()
+			b.showHeadMenu()
+		case constant.BUTTON_CODE_YANDEX_DDIALOGS:
+			b.showYandexMenu()
+		case constant.BUTTON_CODE_YANDEX_GET_HOME_INFO:
+			b.GetHomeInfo()
+			b.showYandexSmartMenu()
+		case constant.BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT:
+			b.YandexDeviceTurnOnOff(deviceIDNightLight, &nightLightCondition)
+			b.showYandexSmartMenu()
+		case constant.BUTTON_CODE_YANDEX_TURN_ON_SPEAKER:
+			b.YandexDeviceTurnOnOff(deviceIDSpeaker, &speakerCondition)
+			b.showYandexSmartMenu()
 		case constant.BUTTON_CODE_TRANSLATE:
 			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true) // Устанавливаем состояние перевода в true
 			msg := tgbotapi.NewMessage(b.ChatID, "Вы в режиме перевода. \nВведите текст который хотите чтобы я перевел или отправьте /stop, чтобы выйти из режима перевода.")
@@ -202,7 +170,7 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *re
 			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false)
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Режим перевода выключен.")
 			b.Bot.Send(msg)
-			b.showMenu()
+			b.showHeadMenu()
 		} else if ok && value.IsTranslating {
 			b.translateText(update)
 		} else if update.Message.Text == "/start" {

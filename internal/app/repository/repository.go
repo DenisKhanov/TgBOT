@@ -3,6 +3,8 @@ package repository
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/sirupsen/logrus"
 	"os"
 	"time"
@@ -14,6 +16,7 @@ type UserState struct {
 	LastUserMessages  string `json:"lastUserMessages"`  // Данные, введённые пользователем, ключ - название данных
 	CallbackQueryData string `json:"callbackQueryData"` // Данные из callback-запросов, если они используются
 	IsTranslating     bool   `json:"isTranslating"`     // Флаг состояния перевода для пользователя
+	Token             string `json:"token"`             // Токен сервиса яндекс smarthome
 }
 type UsersState struct {
 	BatchBuffer     map[int64]*UserState `json:"batchBuffer"`
@@ -33,6 +36,7 @@ func newUserState(chatID int64) *UserState {
 		LastUserMessages:  "",
 		CallbackQueryData: "",
 		IsTranslating:     false,
+		Token:             "",
 	}
 }
 
@@ -71,6 +75,19 @@ func (m *UsersState) StoreUserState(chatID int64, currentStep, lastUserMassage, 
 	m.BatchBuffer[chatID].IsTranslating = isTranslating
 }
 
+func (m *UsersState) SaveUserYandexSmartHomeToken(chatID int64, token string) {
+	m.BatchBuffer[chatID] = newUserState(chatID)
+	m.BatchBuffer[chatID].Token = token
+}
+func (m *UsersState) GetUserYandexSmartHomeToken(chatID int64) (string, error) {
+	fmt.Println(chatID, "- chatID")
+	token := m.BatchBuffer[chatID].Token
+	if token == "" {
+		return "", errors.New("token not found")
+	}
+	return token, nil
+}
+
 func (m *UsersState) SaveBatchToFile() error {
 	startTime := time.Now() // Засекаем время начала операции
 	file, err := os.OpenFile(m.storageFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
@@ -93,7 +110,7 @@ func (m *UsersState) SaveBatchToFile() error {
 	}
 
 	elapsedTime := time.Since(startTime) // Вычисляем затраченное время
-	logrus.Infof("%d URL saved in %v", m.BatchBuffer, elapsedTime)
+	logrus.Infof("%d saved in %v", m.BatchBuffer, elapsedTime)
 	m.BatchBuffer = make(map[int64]*UserState)
 	return nil
 }

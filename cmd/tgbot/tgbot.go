@@ -1,13 +1,16 @@
 package main
 
 import (
-	"GoProgects/PetProjects/cmd/api"
+	"GoProgects/PetProjects/internal/app/api"
 	"GoProgects/PetProjects/internal/app/config"
 	"GoProgects/PetProjects/internal/app/custom"
+	"GoProgects/PetProjects/internal/app/handlers"
 	"GoProgects/PetProjects/internal/app/logcfg"
 	"GoProgects/PetProjects/internal/app/repository"
 	"GoProgects/PetProjects/internal/app/services"
 	"context"
+	"fmt"
+	"github.com/gin-gonic/gin"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -30,10 +33,13 @@ func main() {
 	bot.Debug = true
 	customBot := &custom.BotAPICustom{BotAPI: bot}
 	usersState := repository.NewUsersStateMap(cfg.EnvStoragePath)
-	myBoringAPI := api.NewBoringAPI("http://www.boredapi.com/api/activity/")
-	myYandexAPI := api.NewYandexAPI("https://translate.api.cloud.yandex.net/translate/v2/translate",
+	myYandexTranslate := api.NewYandexAPI("https://translate.api.cloud.yandex.net/translate/v2/translate",
 		"https://translate.api.cloud.yandex.net/translate/v2/detect", cfg.EnvYandexToken)
-	myBot := services.NewTgBot(myBoringAPI, myYandexAPI, usersState, bot)
+	myBoringAPI := api.NewBoringAPI("http://www.boredapi.com/api/activity/")
+	myYandexAuth := api.NewYandexAuthAPI("https://oauth.yandex.ru/token")
+	myYandexSmart := api.NewYandexSmartHomeAPI("https://api.iot.yandex.net")
+	myBot := services.NewTgBot(myBoringAPI, myYandexTranslate, myYandexAuth, myYandexSmart, usersState, bot)
+	myHandlers := handlers.NewHandlers(myBot)
 
 	if err = myBot.Repository.ReadFileToMemoryURL(); err != nil {
 		logrus.Error(err)
@@ -67,7 +73,17 @@ func main() {
 			}
 		}
 	}()
+	router := gin.Default()
 
+	router.GET("/callback", myHandlers.LogIn)
+
+	// Запускаем сервер сервер
+	go func() {
+		if err = router.Run(":8080"); err != nil {
+			fmt.Println("Failed to start server:", err)
+		}
+	}()
+	fmt.Println("Server started on :8080")
 	// Основной цикл обработки обновлений
 	for update := range customBot.GetUpdatesChan(ctx, updateConfig) { // Получение обновлений
 		if update.InlineQuery != nil {
@@ -77,5 +93,4 @@ func main() {
 		} // Когда получен сигнал об остановке
 	}
 	logrus.Info("Shutting down main loop...")
-
 }

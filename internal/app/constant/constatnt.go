@@ -21,15 +21,26 @@ const (
 	EMOJI_BUTTON_END                     = "  \U000025C0"         // ◀
 	EMOJI_BUTTON_UP                      = "\U0001F199"           //🆙
 
-	BUTTON_TEXT_PRINT_INTRO = EMOJI_BUTTON_UP + "Расскажи о себе" + EMOJI_BUTTON_UP
-	BUTTON_TEXT_SKIP_INTRO  = EMOJI_BUTTON_UP + "Пропусти вступление" + EMOJI_BUTTON_UP
-	BUTTON_TEXT_WHAT_TO_DO  = EMOJI_BUTTON_UP + "Чем мне заняться?" + EMOJI_BUTTON_UP
-	BUTTON_TEXT_TRANSLATE   = EMOJI_BUTTON_UP + "Переведи текст" + EMOJI_BUTTON_UP
-	BUTTON_TEXT_PRINTMENU   = EMOJI_BUTTON_UP + "Покажи меню" + EMOJI_BUTTON_UP
+	BUTTON_TEXT_PRINT_INTRO                = EMOJI_BUTTON_START + "Расскажи о себе" + EMOJI_BUTTON_END
+	BUTTON_TEXT_SKIP_INTRO                 = EMOJI_BUTTON_START + "Пропусти вступление" + EMOJI_BUTTON_END
+	BUTTON_TEXT_WHAT_TO_DO                 = EMOJI_BUTTON_START + "Чем мне заняться?" + EMOJI_BUTTON_END
+	BUTTON_TEXT_TRANSLATE                  = EMOJI_BUTTON_START + "Переведи текст" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_TURN_ON_NIGHT_LIGHT = EMOJI_BUTTON_START + "Включи/Выключи ночник" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_TURN_ON_SPEAKER     = EMOJI_BUTTON_START + "Включи/Выключи колонки" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_DDIALOGS            = EMOJI_BUTTON_START + "Меню YandexTranslate диалогов" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_LOGIN               = EMOJI_BUTTON_START + "Авторизоваться" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_GET_HOME_INFO       = EMOJI_BUTTON_START + "Показать информацию SmartHome" + EMOJI_BUTTON_END
 
-	BUTTON_CODE_PRINT_INTRO = "print_intro"
-	BUTTON_CODE_SKIP_INTRO  = "skip_intro"
-	BUTTON_CODE_WHAT_TO_DO  = "what_should_i_do"
-	BUTTON_CODE_TRANSLATE   = "text_translate"
-	BUTTON_CODE_PRINT_MENU  = "print_menu"
+	BUTTON_TEXT_PRINT_MENU = EMOJI_BUTTON_START + "Покажи главное меню" + EMOJI_BUTTON_END
+
+	BUTTON_CODE_PRINT_INTRO                = "print_intro"
+	BUTTON_CODE_SKIP_INTRO                 = "skip_intro"
+	BUTTON_CODE_WHAT_TO_DO                 = "what_should_i_do"
+	BUTTON_CODE_TRANSLATE                  = "text_translate"
+	BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT = "turn_on_off_night_light"
+	BUTTON_CODE_YANDEX_TURN_ON_SPEAKER     = "turn_on_off_speaker"
+	BUTTON_CODE_YANDEX_DDIALOGS            = "yandex_dialogs"
+	BUTTON_CODE_YANDEX_LOGIN               = "https://oauth.yandex.ru/authorize?response_type=code&client_id=f78d9fab1f2b49ca9c729ec0c72964a8&redirect_uri=http://localhost:8080/callback"
+	BUTTON_CODE_YANDEX_GET_HOME_INFO       = "yandex_home_info"
+	BUTTON_CODE_PRINT_MENU                 = "print_menu"
 )
