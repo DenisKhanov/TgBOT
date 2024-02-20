@@ -10,6 +10,8 @@ import (
 	"runtime"
 )
 
+// RunLoggerConfig производит настройку logrus устанавливая уровень логирования,
+// формат логируемой информации и настройки записи логов в файл.
 func RunLoggerConfig(EnvLogs string) {
 
 	logLevel, err := logrus.ParseLevel(EnvLogs)
@@ -19,6 +21,7 @@ func RunLoggerConfig(EnvLogs string) {
 	logrus.SetLevel(logLevel)
 	logrus.SetReportCaller(true)
 
+	//Настраиваем формат логируемой информации
 	logrus.SetFormatter(&logrus.TextFormatter{
 		CallerPrettyfier: func(f *runtime.Frame) (function string, file string) {
 			_, filename := path.Split(f.File)
@@ -26,6 +29,7 @@ func RunLoggerConfig(EnvLogs string) {
 			return "", filename
 		},
 	})
+	// Настраиваем запись логов в файл
 	mw := io.MultiWriter(os.Stdout, &lumberjack.Logger{
 		Filename:   "tgBot.log",
 		MaxSize:    50,

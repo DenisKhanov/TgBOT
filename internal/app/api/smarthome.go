@@ -1,6 +1,7 @@
 package api
 
 import (
+	"GoProgects/PetProjects/internal/app/models"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -44,14 +45,56 @@ type YandexSmartHome struct {
 	ResponseSmart
 }
 
+type userDeviceInfo struct {
+	Status    string `json:"status"`
+	RequestId string `json:"request_id"`
+	Rooms     []struct {
+		Id          string   `json:"id"`
+		Name        string   `json:"name"`
+		HouseholdId string   `json:"household_id"`
+		Devices     []string `json:"devices"`
+	} `json:"rooms"`
+	Groups  []interface{} `json:"groups"`
+	Devices []struct {
+		Id           string        `json:"id"`
+		Name         string        `json:"name"`
+		Aliases      []interface{} `json:"aliases"`
+		Type         string        `json:"type"`
+		ExternalId   string        `json:"external_id"`
+		SkillId      string        `json:"skill_id"`
+		HouseholdId  string        `json:"household_id"`
+		Room         string        `json:"room"`
+		Groups       []interface{} `json:"groups"`
+		Capabilities []struct {
+			Reportable  bool   `json:"reportable"`
+			Retrievable bool   `json:"retrievable"`
+			Type        string `json:"type"`
+			Parameters  struct {
+				Split bool `json:"split"`
+			} `json:"parameters"`
+			State struct {
+				Instance string `json:"instance"`
+				Value    bool   `json:"value"`
+			} `json:"state"`
+			LastUpdated float64 `json:"last_updated"`
+		} `json:"capabilities"`
+		Properties []interface{} `json:"properties"`
+	} `json:"devices"`
+	Scenarios  []interface{} `json:"scenarios"`
+	Households []struct {
+		Id   string `json:"id"`
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"households"`
+}
+
 func NewYandexSmartHomeAPI(endpoint string) *YandexSmartHome {
 	return &YandexSmartHome{endpoint: endpoint}
 }
 
-func (sh *YandexSmartHome) GetHomeInfo(token string) ([]byte, error) {
+func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	fmt.Println("Token!!!", token)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sh.endpoint+"/v1.0/user/info", nil)
 	if err != nil {
 		err = fmt.Errorf("failed to create request with ctx: %w", err)
@@ -72,16 +115,28 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) ([]byte, error) {
 		logrus.Error(err)
 		return nil, err
 	}
-	//TODO пока не произвожу анмаршалинг тела ответа, но над этим стоит подумать
-	//var response ResponseAUTH
-	//err = json.Unmarshal(data, &response)
-	//if err != nil {
-	//	return "", err
-	//}
+
+	//заполняем структуру с данными об умном доме пользователя
+	var response userDeviceInfo
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	//создаем карту с устройствами пользователя, для дальнейшего их использования
+	userDevices := make(map[string]*models.Device)
+	for _, v := range response.Devices {
+		userDevices[v.Name] = &models.Device{
+			Name:  v.Name,
+			ID:    v.Id,
+			State: v.Capabilities[0].State.Value,
+		}
+	}
 
 	logrus.Infof("Статус-код: %s, Response body: %s ", res.Status, string(data))
 
-	return data, nil
+	return userDevices, nil
 }
 
 func (sh *YandexSmartHome) TurnOnOffAction(token, id string, value bool) error {
@@ -94,7 +149,7 @@ func (sh *YandexSmartHome) TurnOnOffAction(token, id string, value bool) error {
 					{Type: "devices.capabilities.on_off",
 						State: DeviceActionState{
 							Instance: "on",
-							Value:    value}}}}},
+							Value:    !value}}}}},
 	}
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {

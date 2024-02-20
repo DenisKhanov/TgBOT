@@ -2,6 +2,7 @@ package services
 
 import (
 	"GoProgects/PetProjects/internal/app/constant"
+	"GoProgects/PetProjects/internal/app/models"
 	"GoProgects/PetProjects/internal/app/repository"
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -14,8 +15,9 @@ type Repository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
 	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating bool)
-	SaveUserYandexSmartHomeToken(chatID int64, token string)
+	SaveUserYandexSmartHomeInfo(chatID int64, token string, devices map[string]*models.Device)
 	GetUserYandexSmartHomeToken(chatID int64) (string, error)
+	GetUserYandexSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
 }
 
 type TgBotServices struct {
@@ -44,6 +46,7 @@ func (b *TgBotServices) sendIntroMessageWithDelay(delayInSec uint8, text string)
 	time.Sleep(time.Duration(delayInSec) * time.Second)
 	b.Bot.Send(msg)
 }
+
 func (b *TgBotServices) getKeyboardRow(buttonText, buttonCode string) []tgbotapi.InlineKeyboardButton {
 	return tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(buttonText, buttonCode))
 }
@@ -53,6 +56,7 @@ func (b *TgBotServices) printIntro() {
 	b.sendIntroMessageWithDelay(2, "Но мои возможности регулярно растут")
 	b.sendIntroMessageWithDelay(1, constant.EMOJI_BICEPS)
 }
+
 func (b *TgBotServices) askToPrintIntro() {
 	msg := tgbotapi.NewMessage(b.ChatID, "Это приветственное вступление, в нем описываются возможности бота, ты можешь пропустить его. Что ты выберешь?")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
@@ -128,6 +132,145 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 	})
 }
 
+type Boring interface {
+	BoredAPI() (string, error)
+}
+
+func (b *TgBotServices) SendActivityMsg() {
+	text, err := b.Boring.BoredAPI()
+	ruText, err := b.YandexTranslate.TranslateAPI(text)
+	var msg tgbotapi.MessageConfig
+	if err == nil {
+		msg = tgbotapi.NewMessage(b.ChatID, ruText)
+	} else {
+		msg = tgbotapi.NewMessage(b.ChatID, "К сожалению в данный момент я не могу дотянуться до знаний")
+
+	}
+	b.Bot.Send(msg)
+}
+
+type YandexAuth interface {
+	AuthAPI(accessCode string) (string, error)
+}
+type YandexSmartHome interface {
+	GetHomeInfo(token string) (map[string]*models.Device, error)
+	TurnOnOffAction(token, id string, value bool) error
+}
+
+func (b *TgBotServices) showYandexMenu() {
+	msg := tgbotapi.NewMessage(b.ChatID, "Выберите пункт:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_YANDEX_LOGIN, constant.BUTTON_CODE_YANDEX_LOGIN)),
+	)
+	b.Bot.Send(msg)
+}
+
+func (b *TgBotServices) showYandexSmartMenu() {
+	msg := tgbotapi.NewMessage(b.ChatID, "Выберите пункт:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO, constant.BUTTON_CODE_YANDEX_GET_HOME_INFO)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_TURN_ON_NIGHT_LIGHT, constant.BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_TURN_ON_SPEAKER, constant.BUTTON_CODE_YANDEX_TURN_ON_SPEAKER)),
+	)
+	b.Bot.Send(msg)
+}
+
+func (b *TgBotServices) GetYandexSmartHomeToken(accessCode string) {
+	token, err := b.YandexAuth.AuthAPI(accessCode)
+	if err != nil {
+		logrus.Error(err)
+	}
+	userDevices, err := b.YandexSmartHome.GetHomeInfo(token)
+	if err != nil {
+		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, не удалось получить от сервера информацию")
+		logrus.Error(err)
+		b.Bot.Send(msg)
+		return
+	}
+	b.Repository.SaveUserYandexSmartHomeInfo(b.ChatID, token, userDevices)
+	msg := tgbotapi.NewMessage(b.ChatID, "Авторизация прошла успешно")
+	b.Bot.Send(msg)
+	b.showYandexSmartMenu()
+}
+
+func (b *TgBotServices) SendUserHomeInfo() {
+	//TODO реализовать вывод информации об умном доме пользователя
+	//token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+	//if err != nil {
+	//	msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, похоже вы  не прошли авторизацию")
+	//	logrus.Error(err)
+	//	b.Bot.Send(msg)
+	//	return
+	//}
+	//userHomeInfoData, err := b.YandexSmartHome.GetHomeInfo(token)
+	//if err != nil {
+	//	msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, не удалось получить от сервера информацию")
+	//	logrus.Error(err)
+	//	b.Bot.Send(msg)
+	//	return
+	//}
+	//msg := tgbotapi.NewMessage(b.ChatID, userHomeInfoData)
+	//b.Bot.Send(msg)
+}
+
+// TODO ID устройства должно быть получено автоматически из информации об устройствах пользователя
+func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) {
+	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, похоже вы  не прошли авторизацию")
+		logrus.Error(err)
+		b.Bot.Send(msg)
+		return
+	}
+	devices, err := b.Repository.GetUserYandexSmartHomeDevices(b.ChatID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, устройства не найдены")
+		logrus.Error(err)
+		b.Bot.Send(msg)
+		return
+	}
+	deviceID := devices[deviceName].ID
+	deviceState := devices[deviceName].State
+
+	if err := b.YandexSmartHome.TurnOnOffAction(token, deviceID, deviceState); err != nil {
+		msg := tgbotapi.NewMessage(b.ChatID, "Не удалось подключиться к устройству")
+		logrus.Error(err)
+		b.Bot.Send(msg)
+		return
+	}
+	if !deviceState {
+		devices[deviceName].State = true
+	} else {
+		devices[deviceName].State = false
+	}
+	msg := tgbotapi.NewMessage(b.ChatID, "Выполнено")
+	b.Bot.Send(msg)
+}
+
+type YandexTranslate interface {
+	TranslateAPI(text string) (string, error)
+	DetectLangAPI(text string) (string, error)
+}
+
+func (b *TgBotServices) translateText(update *tgbotapi.Update) {
+	translatedText, err := b.YandexTranslate.TranslateAPI(update.Message.Text)
+	if err != nil {
+		logrus.Error(err)
+		return
+	}
+	msg := tgbotapi.NewMessage(b.ChatID, translatedText)
+	msg.ReplyToMessageID = update.Message.MessageID
+	b.Bot.Send(msg)
+}
+
 func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *repository.UsersState) {
 	var choiceCode string
 	if update.CallbackQuery != nil && update.CallbackQuery.Data != "" {
@@ -141,21 +284,23 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *re
 			b.showHeadMenu()
 		case constant.BUTTON_CODE_SKIP_INTRO:
 			b.showHeadMenu()
+			//TODO проверить почему при нажатии вывести яндекс меню снова приветствие напечаталось
 		case constant.BUTTON_CODE_PRINT_MENU:
 			b.showHeadMenu()
 		case constant.BUTTON_CODE_WHAT_TO_DO:
-			b.GenerateActivityMsg()
+			b.SendActivityMsg()
 			b.showHeadMenu()
 		case constant.BUTTON_CODE_YANDEX_DDIALOGS:
 			b.showYandexMenu()
 		case constant.BUTTON_CODE_YANDEX_GET_HOME_INFO:
-			b.GetHomeInfo()
+			b.SendUserHomeInfo()
 			b.showYandexSmartMenu()
+			//TODO вывод кнопок с устройствами должен происходить динамически, в зависимости от их наличия
 		case constant.BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT:
-			b.YandexDeviceTurnOnOff(deviceIDNightLight, &nightLightCondition)
+			b.YandexDeviceTurnOnOff("Ночник")
 			b.showYandexSmartMenu()
 		case constant.BUTTON_CODE_YANDEX_TURN_ON_SPEAKER:
-			b.YandexDeviceTurnOnOff(deviceIDSpeaker, &speakerCondition)
+			b.YandexDeviceTurnOnOff("Колонки")
 			b.showYandexSmartMenu()
 		case constant.BUTTON_CODE_TRANSLATE:
 			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true) // Устанавливаем состояние перевода в true
