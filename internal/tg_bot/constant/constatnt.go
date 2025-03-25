@@ -27,7 +27,7 @@ const (
 	BUTTON_TEXT_TRANSLATE                  = EMOJI_BUTTON_START + "Переведи текст" + EMOJI_BUTTON_END
 	BUTTON_TEXT_YANDEX_TURN_ON_NIGHT_LIGHT = EMOJI_BUTTON_START + "Включи/Выключи ночник" + EMOJI_BUTTON_END
 	BUTTON_TEXT_YANDEX_TURN_ON_SPEAKER     = EMOJI_BUTTON_START + "Включи/Выключи колонки" + EMOJI_BUTTON_END
-	BUTTON_TEXT_YANDEX_DDIALOGS            = EMOJI_BUTTON_START + "Меню YandexTranslate диалогов" + EMOJI_BUTTON_END
+	BUTTON_TEXT_YANDEX_DDIALOGS            = EMOJI_BUTTON_START + "Меню Yandex диалогов" + EMOJI_BUTTON_END
 	BUTTON_TEXT_YANDEX_LOGIN               = EMOJI_BUTTON_START + "Авторизоваться" + EMOJI_BUTTON_END
 	BUTTON_TEXT_YANDEX_GET_HOME_INFO       = EMOJI_BUTTON_START + "Показать информацию SmartHome" + EMOJI_BUTTON_END
 
@@ -40,7 +40,7 @@ const (
 	BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT = "turn_on_off_night_light"
 	BUTTON_CODE_YANDEX_TURN_ON_SPEAKER     = "turn_on_off_speaker"
 	BUTTON_CODE_YANDEX_DDIALOGS            = "yandex_dialogs"
-	BUTTON_CODE_YANDEX_LOGIN               = "https://oauth.yandex.ru/authorize?response_type=code&client_id=f78d9fab1f2b49ca9c729ec0c72964a8&redirect_uri=http://localhost:8080/callback"
+	BUTTON_CODE_YANDEX_LOGIN               = "https://oauth.yandex.ru/authorize?response_type=code&client_id=f78d9fab1f2b49ca9c729ec0c72964a8&redirect_uri=https://localhost:8080/callback"
 	BUTTON_CODE_YANDEX_GET_HOME_INFO       = "yandex_home_info"
 	BUTTON_CODE_PRINT_MENU                 = "print_menu"
 )

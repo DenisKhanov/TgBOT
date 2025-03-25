@@ -1,11 +1,11 @@
 package api
 
 import (
-	"GoProgects/PetProjects/internal/app/models"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net/http"

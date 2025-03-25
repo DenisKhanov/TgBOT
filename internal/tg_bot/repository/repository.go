@@ -1,10 +1,10 @@
 package repository
 
 import (
-	"GoProgects/PetProjects/internal/app/models"
 	"bufio"
 	"encoding/json"
 	"errors"
+	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/sirupsen/logrus"
 	"os"
 	"time"
@@ -31,15 +31,15 @@ func (m *UsersState) ReadFileToMemoryURL() error {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	var buffer []byte
-	var bufferJSON models.UserState
+	var bufferFromJSON models.UserState
 	for scanner.Scan() {
 		buffer = scanner.Bytes()
-		err = json.Unmarshal(buffer, &bufferJSON)
+		err = json.Unmarshal(buffer, &bufferFromJSON)
 		if err != nil {
 			logrus.Error(err)
 			return err
 		}
-		m.BatchBuffer[bufferJSON.ChatID] = &bufferJSON
+		m.BatchBuffer[bufferFromJSON.ChatID] = &bufferFromJSON
 	}
 	if err = scanner.Err(); err != nil {
 		logrus.Error(err)
@@ -104,7 +104,6 @@ func (m *UsersState) SaveBatchToFile() error {
 	}
 
 	elapsedTime := time.Since(startTime) // Вычисляем затраченное время
-	logrus.Infof("%d saved in %v", m.BatchBuffer, elapsedTime)
-	m.BatchBuffer = make(map[int64]*models.UserState)
+	logrus.Infof("%v saved in file %s in %v", m.BatchBuffer, m.storageFilePath, elapsedTime)
 	return nil
 }
