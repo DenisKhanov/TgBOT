@@ -6,7 +6,7 @@ type UserState struct {
 	LastUserMessages  string             `json:"lastUserMessages"`  // Данные, введённые пользователем, ключ - название данных
 	CallbackQueryData string             `json:"callbackQueryData"` // Данные из callback-запросов, если они используются
 	IsTranslating     bool               `json:"isTranslating"`     // Флаг состояния перевода для пользователя
-	Token             string             `json:"token"`             // Токен сервиса яндекс smarthome
+	Token             string             `json:"-"`                 // Токен сервиса яндекс smarthome. Не записывается в файл
 	Devices           map[string]*Device `json:"devices"`           // Карта устройств пользователя
 }
 

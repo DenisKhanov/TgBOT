@@ -64,5 +64,11 @@ func (a *YandexAuth) GetOAuthToken(accessCode string) (models.ResponseAUTH, erro
 		return models.ResponseAUTH{}, err
 	}
 
+	//TODO
+	fmt.Println("Token Type", response.TokenType)
+	fmt.Println("Access token", response.AccessToken)
+	fmt.Println("Refresh token", response.RefreshToken)
+	fmt.Println("Expires in", response.ExpiresIn)
+	fmt.Println("Scope", response.Scope)
 	return response, nil
 }

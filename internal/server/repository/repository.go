@@ -6,26 +6,33 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Repo struct {
-	usersTokens map[int]models.Tokens
+type Repository struct {
+	userToken map[int64]models.Tokens
 }
 
-func NewRepo() *Repo {
-	return &Repo{
-		usersTokens: make(map[int]models.Tokens),
+func NewRepository() *Repository {
+	return &Repository{
+		userToken: make(map[int64]models.Tokens),
 	}
 }
 
-func (r *Repo) SaveTokenPair(userID int, tokenPair models.Tokens) error {
-
+func (r *Repository) SaveUserToken(userID int64, tokenPair models.Tokens) error {
+	r.userToken[userID] = tokenPair
+	_, exist := r.userToken[userID]
+	if !exist {
+		err := errors.New("user's token can't save")
+		logrus.WithError(err)
+		return err
+	}
+	return nil
 }
 
-func (r *Repo) GetTokenPair(userID int) (models.Tokens, error) {
-	accessPair, exist := r.usersTokens[userID]
+func (r *Repository) GetUserToken(userID int64) (models.Tokens, error) {
+	tokenPair, exist := r.userToken[userID]
 	if !exist {
-		err := errors.New("user not found")
+		err := errors.New("userID not found")
 		logrus.WithError(err)
 		return models.Tokens{}, err
 	}
-	return accessPair, nil
+	return tokenPair, nil
 }

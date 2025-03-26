@@ -1,7 +1,6 @@
 package tbot
 
 import (
-	serverRepo "github.com/DenisKhanov/TgBOT/internal/server/service"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/api"
 	botHand "github.com/DenisKhanov/TgBOT/internal/tg_bot/api/http"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
@@ -20,7 +19,6 @@ type ServiceProvider struct {
 
 	// Repository
 	repository botServ.Repository
-	serverRepo serverRepo.Repository
 
 	// Handler
 	handler botServ.Handler
@@ -45,12 +43,16 @@ type ServiceProvider struct {
 	clientCert string
 	clientKey  string
 	clientCa   string
+
+	apiKey string
 }
+
+//TODO: разобраться с переносом конфога в сервис провайдер
 
 // NewServiceProvider creates a new instance of the service provider.
 func NewServiceProvider(
 	translateAPI, dictionaryAPI, iotAPI string,
-	serverEndpoint, yandexToken, storagePath, clientCert, clientKey, ClientCa string,
+	serverEndpoint, yandexToken, storagePath, clientCert, clientKey, clientCa, apiKey string,
 ) *ServiceProvider {
 	return &ServiceProvider{
 		translateAPI:   translateAPI,
@@ -61,7 +63,8 @@ func NewServiceProvider(
 		storagePath:    storagePath,
 		clientCert:     clientCert,
 		clientKey:      clientKey,
-		clientCa:       ClientCa,
+		clientCa:       clientCa,
+		apiKey:         apiKey,
 	}
 }
 
@@ -108,7 +111,7 @@ func (s *ServiceProvider) Repository() botServ.Repository {
 // Handler returns the HTTP handler for OAuth operations.
 func (s *ServiceProvider) Handler() botServ.Handler {
 	if s.handler == nil {
-		s.handler = botHand.NewHandler(s.serverEndpoint, s.clientCert, s.clientKey, s.clientCa)
+		s.handler = botHand.NewHandler(s.serverEndpoint, s.clientCert, s.clientKey, s.clientCa, s.apiKey)
 	}
 	return s.handler
 }

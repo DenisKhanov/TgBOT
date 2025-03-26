@@ -18,6 +18,7 @@ type Config struct {
 	EnvClientCert     string // Path to the client certificate file
 	EnvClientKey      string // Path to the client private key file
 	EnvClientCa       string // Path to the client CA certificate file
+	EnvApiKey         string // Key for get token from server
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
@@ -38,6 +39,7 @@ func NewConfig() (*Config, error) {
 	config.EnvClientCert = os.Getenv("CLIENT_CERT_FILE")
 	config.EnvClientKey = os.Getenv("CLIENT_KEY_FILE")
 	config.EnvClientCa = os.Getenv("CLIENT_CA_FILE")
+	config.EnvApiKey = os.Getenv("API_KEY")
 
 	return config, nil
 }

@@ -1,12 +1,14 @@
 package service
 
 import (
+	"fmt"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/constant"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/repository"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 	"log"
+	"strconv"
 	"time"
 )
 
@@ -38,7 +40,7 @@ type Repository interface {
 }
 
 type Handler interface {
-	GetYaSmartHomeToken(accessCode, clientID, clientSecret string) (models.ResponseOAuth, error)
+	GetUserToken(chatID int64) (models.ResponseOAuth, error)
 }
 
 type TgBotServices struct {
@@ -170,20 +172,13 @@ func (b *TgBotServices) SendActivityMsg() {
 	}
 }
 
-func (b *TgBotServices) showYandexMenu() {
-	msg := tgbotapi.NewMessage(b.ChatID, "Выберите пункт:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_YANDEX_LOGIN, constant.BUTTON_CODE_YANDEX_LOGIN)),
-	)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
-}
-
 func (b *TgBotServices) showYandexSmartMenu() {
+	if _, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID); err != nil {
+		if err = b.GetYandexSmartHomeToken(b.ChatID); err != nil {
+			b.showYandexOAuthButton()
+			return
+		}
+	}
 	msg := tgbotapi.NewMessage(b.ChatID, "Выберите пункт:")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -200,27 +195,45 @@ func (b *TgBotServices) showYandexSmartMenu() {
 	}
 }
 
-func (b *TgBotServices) GetYandexSmartHomeToken(chatID int64) {
-	tokenData, err := b.Handler.GetYaSmartHomeToken(accessCode, clientID, clientSecret)
+func (b *TgBotServices) showYandexOAuthButton() {
+	strChatID := strconv.Itoa(int(b.ChatID))
+	msg := tgbotapi.NewMessage(b.ChatID, "Нужно пройти аутентификацию:")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_YANDEX_SEND_CODE, constant.BUTTON_CODE_YANDEX_SEND_CODE+strChatID)),
+	)
+	if _, err := b.Bot.Send(msg); err != nil {
+		logrus.WithError(err).Error("error send msg: ")
+	}
+}
+
+func (b *TgBotServices) GetYandexSmartHomeToken(chatID int64) error {
+	tokenData, err := b.Handler.GetUserToken(chatID)
 	if err != nil {
 		logrus.Error(err)
+		return err
 	}
-
+	//TODO
+	fmt.Println("TOKEN DATA")
+	fmt.Println(tokenData)
 	userDevices, err := b.YandexSmartHome.GetHomeInfo(tokenData.AccessToken)
 	if err != nil {
 		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, не удалось получить от сервера информацию")
 		logrus.Error(err)
 		if _, err = b.Bot.Send(msg); err != nil {
 			logrus.WithError(err).Error("error send msg: ")
+			return err
 		}
-		return
 	}
-	b.Repository.SaveUserYandexSmartHomeInfo(b.ChatID, tokenData.RefreshToken, userDevices)
+	b.Repository.SaveUserYandexSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
 	msg := tgbotapi.NewMessage(b.ChatID, "Авторизация прошла успешно")
 	if _, err = b.Bot.Send(msg); err != nil {
 		logrus.WithError(err).Error("error send msg: ")
+		return err
 	}
-	b.showYandexSmartMenu()
+	return nil
 }
 
 func (b *TgBotServices) SendUserHomeInfo() {
@@ -247,6 +260,7 @@ func (b *TgBotServices) SendUserHomeInfo() {
 
 func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) {
 	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+	fmt.Println("TOKEN = " + token)
 	if err != nil {
 		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, похоже вы  не прошли авторизацию")
 		logrus.Error(err)
@@ -320,10 +334,10 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *re
 		case constant.BUTTON_CODE_WHAT_TO_DO:
 			b.SendActivityMsg()
 			b.showHeadMenu()
-		case constant.BUTTON_CODE_YANDEX_LOGIN:
-			b.GetYandexSmartHomeToken()
 		case constant.BUTTON_CODE_YANDEX_DDIALOGS:
-			b.showYandexMenu()
+			b.showYandexSmartMenu()
+		case constant.BUTTON_CODE_YANDEX_LOGIN:
+			b.showYandexOAuthButton()
 		case constant.BUTTON_CODE_YANDEX_GET_HOME_INFO:
 			b.SendUserHomeInfo()
 			b.showYandexSmartMenu()

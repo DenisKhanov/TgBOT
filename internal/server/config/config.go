@@ -18,6 +18,7 @@ type Config struct {
 	ServerCa         string // Path to the server's CA file
 	ClientId         string // For access to get token from Yandex Home only to owner
 	ClientSecret     string // For access to get token from Yandex Home only to owner
+	ApiKey           string // Key for take token TGBot agent
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
@@ -38,6 +39,7 @@ func NewConfig() (*Config, error) {
 	config.ServerCa = os.Getenv("SERVER_CA_FILE")
 	config.ClientId = os.Getenv("CLIENT_ID")
 	config.ClientSecret = os.Getenv("CLIENT_SECRET")
+	config.ApiKey = os.Getenv("API_KEY")
 
 	return config, nil
 }

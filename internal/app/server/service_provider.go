@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/DenisKhanov/TgBOT/internal/server/api/http"
+	"github.com/DenisKhanov/TgBOT/internal/server/repository"
 	"github.com/DenisKhanov/TgBOT/internal/server/service"
 )
 
@@ -19,16 +20,17 @@ func newServiceProvider() *serviceProvider {
 // Service returns the service for user-related operations.
 func (s *serviceProvider) Service(yaEndpoint, clientID, clientSecret string) http.Service {
 	yaOAuth := service.NewYandexAuthAPI(yaEndpoint, clientID, clientSecret)
+	repo := repository.NewRepository()
 	if s.service == nil {
-		s.service = service.NewService(yaOAuth)
+		s.service = service.NewService(yaOAuth, repo)
 	}
 	return s.service
 }
 
 // Handler returns the http for user-related HTTP endpoints.
-func (s *serviceProvider) Handler(yaEndpoint, clientID, clientSecret string) *http.Handler {
+func (s *serviceProvider) Handler(yaEndpoint, clientID, clientSecret, apiKey string) *http.Handler {
 	if s.handler == nil {
-		s.handler = http.NewHandler(s.Service(yaEndpoint, clientID, clientSecret))
+		s.handler = http.NewHandler(s.Service(yaEndpoint, clientID, clientSecret), apiKey)
 	}
 	return s.handler
 }

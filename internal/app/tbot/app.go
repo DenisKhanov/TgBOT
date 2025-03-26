@@ -81,6 +81,7 @@ func (a *App) initServiceProvider(_ context.Context) error {
 		a.config.EnvClientCert,
 		a.config.EnvClientKey,
 		a.config.EnvClientCa,
+		a.config.EnvApiKey,
 	)
 	return nil
 }

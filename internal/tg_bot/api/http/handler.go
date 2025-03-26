@@ -1,7 +1,6 @@
 package http
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -10,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,9 +17,10 @@ import (
 type Handler struct {
 	client      *http.Client // HTTP-клиент с настроенным TLS
 	srvEndpoint string       //URL адрес сервера
+	apiKey      string
 }
 
-func NewHandler(srvEndpoint, cert, key, ca string) *Handler {
+func NewHandler(srvEndpoint, cert, key, ca, apiKey string) *Handler {
 	// Проверяем, что endpoint использует HTTPS
 	if !strings.HasPrefix(srvEndpoint, "https://") {
 		panic(fmt.Errorf("server endpoint must start with 'https://': %s", srvEndpoint))
@@ -64,56 +65,35 @@ func NewHandler(srvEndpoint, cert, key, ca string) *Handler {
 	return &Handler{
 		client:      client,
 		srvEndpoint: srvEndpoint,
+		apiKey:      apiKey,
 	}
 }
 
-func (h *Handler) GetYaSmartHomeToken(accessCode, clientID, clientSecret string) (models.ResponseOAuth, error) {
-	fmt.Printf("Sending request to: %s\n", h.srvEndpoint) // Отладка
-	// Данные для отправки
-	data := map[string]string{
-		"access_code":   accessCode,
-		"client_id":     clientID,
-		"client_secret": clientSecret,
-	}
-
-	// Кодируем данные в JSON
-	jsonData, err := json.Marshal(data)
+func (h *Handler) GetUserToken(chatID int64) (models.ResponseOAuth, error) {
+	strChatID := strconv.Itoa(int(chatID))
+	req, err := http.NewRequest("GET", h.srvEndpoint+"?state="+strChatID, nil)
 	if err != nil {
-		return models.ResponseOAuth{}, fmt.Errorf("error marshal JSON: %w", err)
+		return models.ResponseOAuth{}, err
 	}
-	// URL вашего сервера
-	url := h.srvEndpoint
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return models.ResponseOAuth{}, fmt.Errorf("error creating request: %w", err)
-	}
-
-	fmt.Println(req.Header)
-	fmt.Println(req.Body)
-	fmt.Println(req.Method)
-	fmt.Println(req)
-
-	req.Header.Set("Content-Type", "application/json") // Добавляем заголовок
+	req.Header.Set("X-API-Key", h.apiKey)
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return models.ResponseOAuth{}, fmt.Errorf("error sending request: %w", err)
+		return models.ResponseOAuth{}, err
 	}
 	defer resp.Body.Close()
 
-	// Читаем тело ответа
-	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return models.ResponseOAuth{}, fmt.Errorf("server returned: %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return models.ResponseOAuth{}, fmt.Errorf("error reading response: %w", err)
+		return models.ResponseOAuth{}, err
 	}
-
-	fmt.Printf("Response body: %s\n", string(body)) // Отладка
-
-	var resToken models.ResponseOAuth
-
-	if err = json.Unmarshal(body, &resToken); err != nil {
-		return models.ResponseOAuth{}, fmt.Errorf("error unmarshal response: %w", err)
-	}
-
-	return resToken, nil
+	var tokenPair models.ResponseOAuth
+	err = json.Unmarshal(data, &tokenPair)
+	fmt.Println("TOKEN PAIR")
+	fmt.Println(tokenPair)
+	return tokenPair, nil
 }

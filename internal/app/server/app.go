@@ -19,8 +19,7 @@ import (
 type App struct {
 	serviceProvider *serviceProvider // The service provider for dependency injection
 	config          *config.Config   // The configuration object for the application
-	//tls             *tls.Config
-	serverHTTPS *http.Server // The serverHTTPS instance
+	serverHTTPS     *http.Server     // The serverHTTPS instance
 }
 
 // NewApp creates a new instance of the application.
@@ -75,7 +74,7 @@ func (a *App) initServiceProvider(_ context.Context) error {
 
 // initHTTPSServer initializes the http_shortener serverHTTPS with middleware and routes.
 func (a *App) initHTTPSServer(_ context.Context) error {
-	myHandler := a.serviceProvider.Handler(a.config.EnvOAuthEndpoint, a.config.ClientId, a.config.ClientSecret)
+	myHandler := a.serviceProvider.Handler(a.config.EnvOAuthEndpoint, a.config.ClientId, a.config.ClientSecret, a.config.ApiKey)
 
 	// Установка переменной окружения для включения режима разработки
 	gin.SetMode(gin.DebugMode)
@@ -85,6 +84,7 @@ func (a *App) initHTTPSServer(_ context.Context) error {
 	publicRoutes.Use(middleware.LogrusLog())
 
 	publicRoutes.GET("/callback", myHandler.GetTokenFromYandex)
+	publicRoutes.GET("/login", myHandler.GetSavedToken)
 
 	a.serverHTTPS = &http.Server{
 		Addr:    a.config.HTTPSServer,
