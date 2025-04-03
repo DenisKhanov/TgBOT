@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authorization Success</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .success-popup {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            transform: translateY(30px);
+            opacity: 0;
+            animation: popup 0.8s ease-out forwards;
+            max-width: 90%;
+            width: 400px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .success-popup::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: linear-gradient(90deg, #00c853, #00e676, #b2ff59);
+        }
+
+        .success-icon {
+            width: 90px;
+            height: 90px;
+            background: #00c853;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 25px;
+            animation: pulse 2s infinite;
+        }
+
+        .checkmark {
+            color: white;
+            font-size: 50px;
+            line-height: 1;
+            transform: scale(0);
+            animation: scale 0.5s ease-out 0.4s forwards;
+        }
+
+        h2 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        p {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .btn {
+            background: linear-gradient(90deg, #4776e6, #8e54e9);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 50px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            box-shadow: 0 4px 15px rgba(142, 84, 233, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(142, 84, 233, 0.6);
+        }
+
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.6;
+        }
+
+        @keyframes popup {
+            0% {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            70% {
+                transform: translateY(-10px);
+            }
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes scale {
+            0% {
+                transform: scale(0);
+            }
+            70% {
+                transform: scale(1.2);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 200, 83, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 15px rgba(0, 200, 83, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 200, 83, 0);
+            }
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0) rotate(0deg);
+            }
+            100% {
+                transform: translateY(-1000px) rotate(720deg);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .success-popup {
+                padding: 30px;
+                width: 85%;
+            }
+
+            .success-icon {
+                width: 70px;
+                height: 70px;
+            }
+
+            h2 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="particles" id="particles"></div>
+    <div class="success-popup">
+        <div class="success-icon">
+            <span class="checkmark">✓</span>
+        </div>
+        <h2>Authorization Success!</h2>
+        <p>You have been successfully authenticated. Welcome to your dashboard.</p>
+        <button class="btn">Continue</button>
+    </div>
+</div>
+
+<script>
+    // Create animated particles
+    function createParticles() {
+        const particlesContainer = document.getElementById('particles');
+        const colors = ['#00e676', '#2979ff', '#ffea00', '#ff3d00', '#e040fb'];
+        const particleCount = 20;
+
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.classList.add('particle');
+
+            // Random properties
+            const size = Math.random() * 20 + 10;
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const left = Math.random() * 100;
+            const duration = Math.random() * 12 + 8;
+            const delay = Math.random() * 4;
+
+            particle.style.width = `${size}px`;
+            particle.style.height = `${size}px`;
+            particle.style.background = color;
+            particle.style.left = `${left}%`;
+            particle.style.bottom = '-100px';
+            particle.style.animation = `float ${duration}s linear ${delay}s infinite`;
+
+            particlesContainer.appendChild(particle);
+        }
+    }
+
+    // Add button functionality
+    document.querySelector('.btn').addEventListener('click', function() {
+        alert('Action confirmed! Redirecting to dashboard...');
+    });
+
+    // Initialize particles on load
+    window.onload = function() {
+        createParticles();
+    };
+</script>
+</body>
+</html>

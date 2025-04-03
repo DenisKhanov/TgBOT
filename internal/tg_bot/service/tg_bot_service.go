@@ -1,3 +1,5 @@
+// Package service provides the core logic for a Telegram bot, integrating various services.
+// It handles user interactions, inline queries, and Yandex Smart Home operations.
 package service
 
 import (
@@ -7,29 +9,34 @@ import (
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/repository"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
-	"log"
 	"strconv"
+	"sync"
 	"time"
 )
 
+// Boring defines the interface for suggesting activities.
 type Boring interface {
 	BoredAPI() string
 }
 
+// YandexTranslate defines the interface for translation operations.
 type YandexTranslate interface {
-	TranslateAPI(text string) (string, error)
-	DetectLangAPI(text string) (string, error)
+	TranslateAPI(text string) (string, error)  // Retrieves smart home device info.
+	DetectLangAPI(text string) (string, error) // Toggles a device on or off.
 }
 
+// YandexSmartHome defines the interface for Yandex Smart Home operations.
 type YandexSmartHome interface {
 	GetHomeInfo(token string) (map[string]*models.Device, error)
 	TurnOnOffAction(token, id string, value bool) error
 }
 
+// YandexAuth defines the interface for Yandex authentication (not implemented in this code).
 type YandexAuth interface {
 	AuthAPI(accessCode string) (string, error)
 }
 
+// The Repository defines the interface for user state persistence.
 type Repository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
@@ -39,21 +46,38 @@ type Repository interface {
 	GetUserYandexSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
 }
 
+// Handler defines the interface for OAuth token handling.
 type Handler interface {
 	GetUserToken(chatID int64) (models.ResponseOAuth, error)
 }
 
+// TgBotServices is the main service struct for the Telegram bot, integrating all dependencies.
 type TgBotServices struct {
-	Boring          Boring
-	YandexTranslate YandexTranslate
-	YandexSmartHome YandexSmartHome
-	Repository      Repository
-	ChatID          int64
-	Bot             *tgbotapi.BotAPI
-	Handler         Handler
+	Boring          Boring                // Activity suggestion service.
+	YandexTranslate YandexTranslate       // Translation service.
+	YandexSmartHome YandexSmartHome       // Smart home service.
+	Repository      Repository            // User state repository.
+	ChatID          int64                 // Current chat ID.
+	Bot             *tgbotapi.BotAPI      // Telegram Bot API instance.
+	Handler         Handler               // OAuth handler.
+	OAuthURL        string                // URL for OAuth authentication.
+	OwnerID         int64                 // Owner's chatID for access to Yandex smart home menu button
+	debounceTimers  map[int64]*time.Timer // Per-chat debounce timers
+	mu              *sync.Mutex           // Protects debounceTimers
 }
 
-func NewTgBot(boring Boring, yandex YandexTranslate, yandexSmartHome YandexSmartHome, repository Repository, bot *tgbotapi.BotAPI, handler Handler) *TgBotServices {
+// NewTgBot creates a new TgBotServices instance with the specified dependencies.
+// Arguments:
+//   - boring: activity suggestion service.
+//   - yandex: translation service.
+//   - yandexSmartHome: smart home service.
+//   - repository: user state repository.
+//   - bot: Telegram Bot API instance.
+//   - handler: OAuth handler.
+//   - URL: OAuth URL.
+//
+// Returns a pointer to a TgBotServices.
+func NewTgBot(boring Boring, yandex YandexTranslate, yandexSmartHome YandexSmartHome, repository Repository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
 	return &TgBotServices{
 		Boring:          boring,
 		YandexTranslate: yandex,
@@ -61,14 +85,32 @@ func NewTgBot(boring Boring, yandex YandexTranslate, yandexSmartHome YandexSmart
 		Repository:      repository,
 		Bot:             bot,
 		Handler:         handler,
+		OAuthURL:        URL,
+		OwnerID:         ownerID,
+		debounceTimers:  make(map[int64]*time.Timer),
+		mu:              &sync.Mutex{},
 	}
 }
 
+func (b *TgBotServices) sendMessage(chatID int64, text string, replyToID int, markup interface{}) error {
+	msg := tgbotapi.NewMessage(chatID, text)
+	if replyToID != 0 {
+		msg.ReplyToMessageID = replyToID
+	}
+	if markup != nil {
+		msg.ReplyMarkup = markup
+	}
+	_, err := b.Bot.Send(msg)
+	if err != nil {
+		logrus.WithError(err).Errorf("Failed to send message to chat %d: %s", chatID, text)
+	}
+	return err
+}
+
 func (b *TgBotServices) sendIntroMessageWithDelay(delayInSec uint8, text string) {
-	msg := tgbotapi.NewMessage(b.ChatID, text)
 	time.Sleep(time.Duration(delayInSec) * time.Second)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
+	if err := b.sendMessage(b.ChatID, text, 0, nil); err != nil {
+		logrus.WithError(err).Error("Error sending intro message")
 	}
 }
 
@@ -82,298 +124,292 @@ func (b *TgBotServices) printIntro() {
 	b.sendIntroMessageWithDelay(1, constant.EMOJI_BICEPS)
 }
 
-func (b *TgBotServices) askToPrintIntro() {
-	msg := tgbotapi.NewMessage(b.ChatID, "Это приветственное вступление, в нем описываются возможности бота, ты можешь пропустить его. Что ты выберешь?")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+func (b *TgBotServices) askToPrintIntro() error {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
 		b.getKeyboardRow(constant.BUTTON_TEXT_PRINT_INTRO, constant.BUTTON_CODE_PRINT_INTRO),
 		b.getKeyboardRow(constant.BUTTON_TEXT_SKIP_INTRO, constant.BUTTON_CODE_SKIP_INTRO),
 	)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+	return b.sendMessage(b.ChatID, "Это приветственное вступление, в нем описываются возможности бота, но ты можешь пропустить его. Что ты выберешь?", 0, markup)
+
 }
 
-func (b *TgBotServices) sendSorryMsg(update *tgbotapi.Update) {
-	msg := tgbotapi.NewMessage(b.ChatID, "Я пока этого не умею, но я учусь")
-	msg.ReplyToMessageID = update.Message.MessageID
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+func (b *TgBotServices) sendSorryMsg(update *tgbotapi.Update) error {
+	return b.sendMessage(b.ChatID, "Я пока этого не умею, но я учусь", update.Message.MessageID, nil)
 }
 
-func (b *TgBotServices) showHeadMenu() {
-	msg := tgbotapi.NewMessage(b.ChatID, "Выберите способность:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_WHAT_TO_DO, constant.BUTTON_CODE_WHAT_TO_DO)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_TRANSLATE, constant.BUTTON_CODE_TRANSLATE)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_DDIALOGS, constant.BUTTON_CODE_YANDEX_DDIALOGS)),
+func (b *TgBotServices) showHeadMenu() error {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		b.getKeyboardRow(constant.BUTTON_TEXT_WHAT_TO_DO, constant.BUTTON_CODE_WHAT_TO_DO),
+		b.getKeyboardRow(constant.BUTTON_TEXT_WHITCH_MOVIE_TO_WATCH, constant.BUTTON_CODE_WHITCH_MOVIE_TO_WATCH),
+		b.getKeyboardRow(constant.BUTTON_TEXT_TRANSLATE, constant.BUTTON_CODE_TRANSLATE),
+		b.getKeyboardRow(constant.BUTTON_TEXT_YANDEX_DDIALOGS, constant.BUTTON_CODE_YANDEX_DDIALOGS),
 	)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+	return b.sendMessage(b.ChatID, "Выберите способность:", 0, markup)
 }
 
-var debounceTimer *time.Timer
+//TODO постоянно в инлайн режиме выдается одно сообщение с предложением чем заняться
 
-// HandleInlineQuery запросы в режиме inline которые переводят текст и генерируют "Чем заняться".
-// Пока что в режиме реального времени, скидывая счетчик задержки когда пользователь печатает и переводя, когда он остановился на 1,5 сек
+// HandleInlineQuery processes inline queries for translation or activity suggestions with debouncing.
+// Arguments:
+//   - bot: Telegram Bot API instance.
+//   - query: the inline query from the user.
 func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.InlineQuery) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	chatID := query.From.ID // Используем ID пользователя как ключ для debounce
 	currentInput := query.Query
 
-	if debounceTimer != nil {
-		debounceTimer.Stop()
+	// Останавливаем предыдущий таймер, если он существует
+	if timer, exists := b.debounceTimers[chatID]; exists {
+		timer.Stop()
 	}
 
-	debounceTimer = time.AfterFunc(1500*time.Millisecond, func() {
-		var text string
-		var err error
-		var name string
+	// Запускаем новый таймер с debounce на 1.5 секунды
+	b.debounceTimers[chatID] = time.AfterFunc(1500*time.Millisecond, func() {
+		var results []interface{}
 
+		// Если есть ввод, показываем перевод
 		if currentInput != "" {
-			text, err = b.YandexTranslate.TranslateAPI(currentInput)
-			name = "Перевести введенный текст"
-		} else if currentInput == "" {
-			text = b.Boring.BoredAPI()
-			name = "Предложи чем мне заняться"
+			translatedText, err := b.YandexTranslate.TranslateAPI(currentInput)
+			if err != nil {
+				logrus.WithError(err).Error("Inline query translation failed")
+				return
+			}
+			result := tgbotapi.NewInlineQueryResultArticleMarkdown(
+				"1", // Уникальный ID результата
+				"Перевести введенный текст", // Заголовок
+				translatedText, // Текст результата
+			)
+			results = append(results, result)
 		} else {
-			// Если нет ввода, прерываем выполнение функции
-			return
+			// Если ввода нет, показываем два варианта
+			// 1. Предложение активности
+			activity := b.Boring.BoredAPI()
+			activityResult := tgbotapi.NewInlineQueryResultArticleMarkdown(
+				"1",
+				"Предложи чем мне заняться",
+				activity,
+			)
+			results = append(results, activityResult)
+
+			// 2. Подборка фильмов со ссылкой
+			movieResult := tgbotapi.NewInlineQueryResultArticle(
+				"2",
+				"Посоветуй подборку фильмов",
+				"Нажми, чтобы перейти к подборке фильмов",
+			)
+			movieResult.ReplyMarkup = &tgbotapi.InlineKeyboardMarkup{
+				InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardRow(
+						tgbotapi.NewInlineKeyboardButtonURL("Перейти", "http://176.108.251.250:8444/"),
+					),
+				},
+			}
+			results = append(results, movieResult)
 		}
 
-		if err != nil {
-			logrus.Error(err)
-			return
-		}
-
-		whatToDo := []interface{}{
-			tgbotapi.NewInlineQueryResultArticleMarkdown("1", name, text),
-		}
+		fmt.Println("Обновляю")
+		// Конфигурация ответа inline-запроса
 		inlineConf := tgbotapi.InlineConfig{
 			InlineQueryID: query.ID,
-			Results:       whatToDo,
-			CacheTime:     0,
+			Results:       results,
+			CacheTime:     0, // Отключаем кэширование для свежести результатов
+			IsPersonal:    true,
 		}
-		if _, err := bot.Send(inlineConf); err != nil {
-			log.Println("Ошибка при отправке ответа на inline-запрос:", err)
+
+		// Используем AnswerInlineQuery вместо Send
+		if _, err := bot.Request(inlineConf); err != nil {
+			logrus.WithError(err).Error("Failed to send inline query response")
 		}
 	})
 }
 
-func (b *TgBotServices) SendActivityMsg() {
+func (b *TgBotServices) SendActivityMsg() error {
 	text := b.Boring.BoredAPI()
-
-	msg := tgbotapi.NewMessage(b.ChatID, text)
-
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+	return b.sendMessage(b.ChatID, text, 0, nil)
+}
+func (b *TgBotServices) SendMoviesLink() error {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		b.getKeyboardRow(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_WHITCH_MOVIE_TO_WATCH, "http://176.108.251.250:8444/"),
+		),
+	)
+	return b.sendMessage(b.ChatID, "Тут представлена подборка отличных фильмов по мнению Дениса!", 0, markup)
 }
 
-func (b *TgBotServices) showYandexSmartMenu() {
+func (b *TgBotServices) showYandexSmartMenu() error {
+	if b.ChatID != b.OwnerID {
+		return b.sendMessage(b.ChatID, "Извини, но доступ к этому меню есть только у моего Хозяина.", 0, nil)
+	}
 	if _, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID); err != nil {
 		if err = b.GetYandexSmartHomeToken(b.ChatID); err != nil {
-			b.showYandexOAuthButton()
-			return
+			return b.showYandexOAuthButton()
 		}
 	}
-	msg := tgbotapi.NewMessage(b.ChatID, "Выберите пункт:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO, constant.BUTTON_CODE_YANDEX_GET_HOME_INFO)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_TURN_ON_NIGHT_LIGHT, constant.BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_YANDEX_TURN_ON_SPEAKER, constant.BUTTON_CODE_YANDEX_TURN_ON_SPEAKER)),
-	)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
+	devices, err := b.Repository.GetUserYandexSmartHomeDevices(b.ChatID)
+	if err != nil {
+		return b.sendMessage(b.ChatID, "Не удалось загрузить устройства", 0, nil)
 	}
+
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		b.getKeyboardRow(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU),
+		b.getKeyboardRow(constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO, constant.BUTTON_CODE_YANDEX_GET_HOME_INFO),
+	}
+	for name := range devices {
+		buttonText := fmt.Sprintf("Включить/Выключить %s", name)
+		buttonCode := fmt.Sprintf("device:%s", name)
+		rows = append(rows, b.getKeyboardRow(buttonText, buttonCode))
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	return b.sendMessage(b.ChatID, "Выберите пункт:", 0, markup)
 }
 
-func (b *TgBotServices) showYandexOAuthButton() {
-	strChatID := strconv.Itoa(int(b.ChatID))
-	msg := tgbotapi.NewMessage(b.ChatID, "Нужно пройти аутентификацию:")
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+func (b *TgBotServices) showYandexOAuthButton() error {
+	strChatID := strconv.FormatInt(b.ChatID, 10)
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		b.getKeyboardRow(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(constant.BUTTON_TEXT_PRINT_MENU, constant.BUTTON_CODE_PRINT_MENU)),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_YANDEX_SEND_CODE, constant.BUTTON_CODE_YANDEX_SEND_CODE+strChatID)),
+			tgbotapi.NewInlineKeyboardButtonURL(constant.BUTTON_TEXT_YANDEX_SEND_CODE, b.OAuthURL+strChatID),
+		),
 	)
-	if _, err := b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+	return b.sendMessage(b.ChatID, "Нужно пройти аутентификацию:", 0, markup)
 }
 
 func (b *TgBotServices) GetYandexSmartHomeToken(chatID int64) error {
 	tokenData, err := b.Handler.GetUserToken(chatID)
 	if err != nil {
-		logrus.Error(err)
+		logrus.WithError(err).Error("Failed to get Yandex token")
 		return err
 	}
-	//TODO
-	fmt.Println("TOKEN DATA")
-	fmt.Println(tokenData)
+
 	userDevices, err := b.YandexSmartHome.GetHomeInfo(tokenData.AccessToken)
 	if err != nil {
-		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, не удалось получить от сервера информацию")
-		logrus.Error(err)
-		if _, err = b.Bot.Send(msg); err != nil {
-			logrus.WithError(err).Error("error send msg: ")
-			return err
-		}
+		b.sendMessage(b.ChatID, "Произошла ошибка, не удалось получить информацию об устройствах", 0, nil)
+		return fmt.Errorf("failed to get home info: %w", err)
 	}
+
 	b.Repository.SaveUserYandexSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
-	msg := tgbotapi.NewMessage(b.ChatID, "Авторизация прошла успешно")
-	if _, err = b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-		return err
-	}
-	return nil
+	return b.sendMessage(b.ChatID, "Авторизация прошла успешно", 0, nil)
 }
 
-func (b *TgBotServices) SendUserHomeInfo() {
-	//TODO реализовать вывод информации об умном доме пользователя
-	//token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
-	//if err != nil {
-	//	msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, похоже вы  не прошли авторизацию")
-	//	logrus.Error(err)
-	//	b.Bot.Send(msg)
-	//	return
-	//}
-	//userHomeInfoData, err := b.YandexSmartHome.GetHomeInfo(token)
-	//if err != nil {
-	//	msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, не удалось получить от сервера информацию")
-	//	logrus.Error(err)
-	//	b.Bot.Send(msg)
-	//	return
-	//}
-	//msg := tgbotapi.NewMessage(b.ChatID, userHomeInfoData)
-	//b.Bot.Send(msg)
-}
-
-// TODO ID устройства должно быть получено автоматически из информации об устройствах пользователя
-
-func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) {
+func (b *TgBotServices) SendUserHomeInfo() error {
 	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
-	fmt.Println("TOKEN = " + token)
 	if err != nil {
-		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, похоже вы  не прошли авторизацию")
-		logrus.Error(err)
-		if _, err = b.Bot.Send(msg); err != nil {
-			logrus.WithError(err).Error("error send msg: ")
-		}
-		return
+		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
 	}
+
+	userHomeInfoData, err := b.YandexSmartHome.GetHomeInfo(token)
+	if err != nil {
+		return b.sendMessage(b.ChatID, "Произошла ошибка, не удалось получить информацию от сервера", 0, nil)
+	}
+
+	var text string
+	for name, device := range userHomeInfoData {
+		state := "выключено"
+		if device.ActualState {
+			state = "включено"
+		}
+		text += fmt.Sprintf("%s: %s (ID: %s)\n", name, state, device.ID)
+	}
+	return b.sendMessage(b.ChatID, text, 0, nil)
+}
+
+func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) error {
+	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+	if err != nil {
+		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
+	}
+
 	devices, err := b.Repository.GetUserYandexSmartHomeDevices(b.ChatID)
 	if err != nil {
-		msg := tgbotapi.NewMessage(b.ChatID, "Произошла ошибка, устройства не найдены")
-		logrus.Error(err)
-		if _, err = b.Bot.Send(msg); err != nil {
-			logrus.WithError(err).Error("error send msg: ")
-		}
-		return
+		return b.sendMessage(b.ChatID, "Произошла ошибка, устройства не найдены", 0, nil)
 	}
-	deviceID := devices[deviceName].ID
-	deviceState := devices[deviceName].State
+	device, ok := devices[deviceName]
+	if !ok {
+		return b.sendMessage(b.ChatID, fmt.Sprintf("Устройство %s не найдено", deviceName), 0, nil)
 
-	if err := b.YandexSmartHome.TurnOnOffAction(token, deviceID, deviceState); err != nil {
-		msg := tgbotapi.NewMessage(b.ChatID, "Не удалось подключиться к устройству")
-		logrus.Error(err)
-		if _, err = b.Bot.Send(msg); err != nil {
-			logrus.WithError(err).Error("error send msg: ")
-		}
-		return
 	}
-	if !deviceState {
-		devices[deviceName].State = true
-	} else {
-		devices[deviceName].State = false
+
+	if err = b.YandexSmartHome.TurnOnOffAction(token, device.ID, device.ActualState); err != nil {
+		return b.sendMessage(b.ChatID, "Не удалось подключиться к устройству", 0, nil)
 	}
-	msg := tgbotapi.NewMessage(b.ChatID, "Выполнено")
-	if _, err = b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+
+	device.ActualState = !device.ActualState
+	return b.sendMessage(b.ChatID, "Выполнено", 0, nil)
 }
 
-func (b *TgBotServices) translateText(update *tgbotapi.Update) {
+func (b *TgBotServices) translateText(update *tgbotapi.Update) error {
 	translatedText, err := b.YandexTranslate.TranslateAPI(update.Message.Text)
 	if err != nil {
-		logrus.Error(err)
-		return
+		logrus.WithError(err).Error("Translation failed")
+		return err
 	}
-	msg := tgbotapi.NewMessage(b.ChatID, translatedText)
-	msg.ReplyToMessageID = update.Message.MessageID
-	if _, err = b.Bot.Send(msg); err != nil {
-		logrus.WithError(err).Error("error send msg: ")
-	}
+	return b.sendMessage(b.ChatID, translatedText, update.Message.MessageID, nil)
 }
 
+// UpdateProcessing handles incoming Telegram updates (messages and callback queries).
+// Arguments:
+//   - update: the Telegram update to process.
+//   - usersState: the user state repository instance.
 func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update, usersState *repository.UsersState) {
 	var choiceCode string
+	var errOne, errTwo error
 	if update.CallbackQuery != nil && update.CallbackQuery.Data != "" {
 		b.ChatID = update.CallbackQuery.Message.Chat.ID
 		choiceCode = update.CallbackQuery.Data
 		b.Repository.StoreUserState(b.ChatID, "button", "", choiceCode, false)
 
-		logrus.Infof("[%T] %s", time.Now(), choiceCode)
+		logrus.Infof("Callback query [%s] from chat %d", choiceCode, b.ChatID)
 		switch choiceCode {
 		case constant.BUTTON_CODE_PRINT_INTRO:
 			b.printIntro()
-			b.showHeadMenu()
+			errOne = b.showHeadMenu()
 		case constant.BUTTON_CODE_SKIP_INTRO:
-			b.showHeadMenu()
-			//TODO проверить почему при нажатии вывести яндекс меню снова приветствие напечаталось
+			errOne = b.showHeadMenu()
 		case constant.BUTTON_CODE_PRINT_MENU:
-			b.showHeadMenu()
+			errOne = b.showHeadMenu()
 			//TODO исправить проблему выдачи одинаковых ответов в инлайн режиме
 		case constant.BUTTON_CODE_WHAT_TO_DO:
-			b.SendActivityMsg()
-			b.showHeadMenu()
+			errOne = b.SendActivityMsg()
+			errTwo = b.showHeadMenu()
+		case constant.BUTTON_CODE_WHITCH_MOVIE_TO_WATCH:
+			errOne = b.SendMoviesLink()
 		case constant.BUTTON_CODE_YANDEX_DDIALOGS:
-			b.showYandexSmartMenu()
+			errOne = b.showYandexSmartMenu()
 		case constant.BUTTON_CODE_YANDEX_LOGIN:
-			b.showYandexOAuthButton()
+			errOne = b.showYandexOAuthButton()
 		case constant.BUTTON_CODE_YANDEX_GET_HOME_INFO:
-			b.SendUserHomeInfo()
-			b.showYandexSmartMenu()
-			//TODO вывод кнопок с устройствами должен происходить динамически, в зависимости от их наличия
-		case constant.BUTTON_CODE_YANDEX_TURN_ON_NIGHT_LIGHT:
-			b.YandexDeviceTurnOnOff("Ночник")
-			b.showYandexSmartMenu()
-		case constant.BUTTON_CODE_YANDEX_TURN_ON_SPEAKER:
-			b.YandexDeviceTurnOnOff("Колонки")
-			b.showYandexSmartMenu()
+			errOne = b.SendUserHomeInfo()
+			errTwo = b.showYandexSmartMenu()
+		case "device:" + choiceCode[7:]: // Dynamic device buttons
+			deviceName := choiceCode[7:]
+			errOne = b.YandexDeviceTurnOnOff(deviceName)
+			errTwo = b.showYandexSmartMenu()
 		case constant.BUTTON_CODE_TRANSLATE:
 			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true) // Устанавливаем состояние перевода в true
-			msg := tgbotapi.NewMessage(b.ChatID, "Вы в режиме перевода. \nВведите текст который хотите чтобы я перевел или отправьте /stop, чтобы выйти из режима перевода.")
-			if _, err := b.Bot.Send(msg); err != nil {
-				logrus.WithError(err).Error("error send msg: ")
-			}
+			errOne = b.sendMessage(b.ChatID, "Вы в режиме перевода.\nВведите текст для перевода или /stop для выхода.", 0, nil)
+		}
+		if errOne != nil || errTwo != nil {
+			logrus.Error("errOne: ", errOne, "\n", "errTwo: ", errTwo)
 		}
 	} else if update.Message != nil && update.Message.Text != "" {
 		b.ChatID = update.Message.Chat.ID
-		value, ok := usersState.BatchBuffer[b.ChatID]
+		value, ok := b.Repository.(*repository.UsersState).BatchBuffer[b.ChatID]
 		if update.Message.Text == "/stop" {
 			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false)
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Режим перевода выключен.")
-			if _, err := b.Bot.Send(msg); err != nil {
-				logrus.WithError(err).Error("error send msg: ")
-			}
+			b.sendMessage(b.ChatID, "Режим перевода выключен.", 0, nil)
 			b.showHeadMenu()
 		} else if ok && value.IsTranslating {
 			b.translateText(update)
 		} else if update.Message.Text == "/start" {
-			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+			logrus.Infof("Message [%s] from %s (chat %d)", update.Message.Text, update.Message.From.UserName, b.ChatID)
 			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false)
-			b.ChatID = update.Message.Chat.ID
 			b.askToPrintIntro()
 		} else {
-			b.Repository.StoreUserState(b.ChatID, "i can't do it now ", update.Message.Text, "", false)
+			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false)
 			b.sendSorryMsg(update)
 		}
 	}

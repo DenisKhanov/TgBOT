@@ -4,10 +4,12 @@ req_extensions = v3_req
 prompt = no
 
 [req_distinguished_name]
-CN = YaHomeServ
+CN = 176.108.251.250
 
 [v3_req]
 subjectAltName = @alt_names
 
 [alt_names]
+IP.1 = 176.108.251.250 #it's ip address your server
+IP.2 = 127.0.0.1
 DNS.1 = localhost

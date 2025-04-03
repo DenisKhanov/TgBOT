@@ -1,7 +1,10 @@
+// Package tbot provides the main application structure and logic for running a Telegram bot.
+// It integrates configuration, dependency injection, and graceful shutdown for bot operations.
 package tbot
 
 import (
 	"context"
+	"fmt"
 	"github.com/DenisKhanov/TgBOT/internal/logcfg"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/config"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/repository"
@@ -23,9 +26,8 @@ type App struct {
 // NewApp creates a new instance of the application.
 func NewApp(ctx context.Context) (*App, error) {
 	app := &App{}
-	err := app.initDeps(ctx)
-	if err != nil {
-		return nil, err
+	if err := app.initDeps(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize app: %w", err)
 	}
 	return app, nil
 }
@@ -56,10 +58,11 @@ func (a *App) initDeps(ctx context.Context) error {
 func (a *App) initConfig(_ context.Context) error {
 	cfg, err := config.NewConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 	a.config = cfg
 	logcfg.RunLoggerConfig(a.config.EnvLogsLevel, a.config.EnvLogFileName)
+	logrus.Infof("Configuration initialized with log level: %s", a.config.EnvLogsLevel)
 	return nil
 }
 
@@ -68,7 +71,7 @@ func (a *App) initServiceProvider(_ context.Context) error {
 	const (
 		YandexTranslateAPI  = "https://translate.api.cloud.yandex.net/translate/v2/translate" // translate
 		YandexDictionaryAPI = "https://translate.api.cloud.yandex.net/translate/v2/detect"    // detect language
-		YandexIOTAPI        = "https://api.iot.yandex.net"
+		YandexIOTAPI        = "https://api.iot.yandex.net"                                    //smart devices
 	)
 
 	a.serviceProvider = NewServiceProvider(
@@ -82,23 +85,31 @@ func (a *App) initServiceProvider(_ context.Context) error {
 		a.config.EnvClientKey,
 		a.config.EnvClientCa,
 		a.config.EnvApiKey,
+		a.config.EnvClientID,
+		a.config.EnvOwnerID,
 	)
+	logrus.Info("Service provider initialized")
 	return nil
 }
 
 // runTelegramBot starts the Telegram bot with graceful shutdown.
 func (a *App) runTelegramBot() {
-	// Initialize bot API
+	if a.config.EnvBotToken == "" {
+		logrus.Fatal("Bot token is not set in configuration")
+	}
+
 	botAPI, err := a.serviceProvider.BotAPI(a.config.EnvBotToken)
 	if err != nil {
-		logrus.Fatalf("[ERROR] can't make telegram bot, %v", err)
+		logrus.Fatalf("Failed to initialize Telegram bot API: %v", err)
 	}
 	botAPI.Debug = true
 	logrus.Infof("Bot API created successfully for %s", botAPI.Self.UserName)
 
 	// Initialize bot service
-	myBot := a.serviceProvider.BotService(botAPI)
-
+	myBot, err := a.serviceProvider.BotService(botAPI)
+	if err != nil {
+		logrus.Fatalf("Failed to initialize Telegram bot service provider: %v", err)
+	}
 	// Setup ticker for periodic state saving
 	ticker := time.NewTicker(time.Minute * 5) // Ticker for saving user state to file every 5 minutes
 	defer ticker.Stop()
@@ -115,33 +126,45 @@ func (a *App) runTelegramBot() {
 	// Get repository as UsersState for type assertion
 	usersState, ok := a.serviceProvider.Repository().(*repository.UsersState)
 	if !ok {
-		logrus.Fatal("Failed to cast repository to UsersState")
+		logrus.Fatal("Repository is not of type UsersState")
 	}
 
-	// Main loop
-	for {
-		select {
-		case sig := <-signalChan: // Wait for shutdown signal
-			logrus.Infof("Received %v signal, shutting down bot...", sig)
-			if err = myBot.Repository.SaveBatchToFile(); err != nil {
-				logrus.Error("Error while saving state on shutdown: ", err)
-			}
-			logrus.Info("Shutting down main loop...")
-			os.Exit(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-		case <-ticker.C: // Ticker event
-			if err = myBot.Repository.SaveBatchToFile(); err != nil {
-				logrus.Error("Error while saving state on ticker: ", err)
-			}
-		case update, ok := <-updates: // Telegram updates
-			if !ok {
-				logrus.Errorf("telegram update chan closed")
-			}
+	go func() {
+		for update := range updates {
 			if update.InlineQuery != nil {
 				myBot.HandleInlineQuery(botAPI, update.InlineQuery)
 			} else {
 				myBot.UpdateProcessing(&update, usersState)
 			}
+		}
+		logrus.Info("Update channel closed")
+	}()
+
+	// Main loop
+	for {
+		select {
+		case sig := <-signalChan:
+			logrus.Infof("Received signal %v, initiating shutdown", sig)
+			cancel()
+			if err = myBot.Repository.SaveBatchToFile(); err != nil {
+				logrus.Errorf("Failed to save state during shutdown: %v", err)
+			}
+			botAPI.StopReceivingUpdates()
+			logrus.Info("Telegram bot shut down successfully")
+			return
+
+		case <-ticker.C:
+			if err = myBot.Repository.SaveBatchToFile(); err != nil {
+				logrus.Errorf("Failed to save state on ticker: %v", err)
+			} else {
+				logrus.Info("User state saved successfully")
+			}
+		case <-ctx.Done():
+			logrus.Info("Main loop terminated")
+			return
 		}
 	}
 }

@@ -11,7 +11,7 @@ type UserState struct {
 }
 
 type Device struct {
-	Name  string
-	ID    string
-	State bool
+	Name        string
+	ID          string
+	ActualState bool
 }

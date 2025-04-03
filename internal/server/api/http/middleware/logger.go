@@ -12,7 +12,6 @@ import (
 // This middleware is useful for monitoring and debugging purposes.
 func LogrusLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Запуск таймера
 		start := time.Now()
 
 		// Обработка запроса

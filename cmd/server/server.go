@@ -8,9 +8,10 @@ import (
 
 func main() {
 	ctx := context.Background()
-	a, err := server.NewApp(ctx)
+
+	app, err := server.NewApp(ctx)
 	if err != nil {
-		logrus.Fatalf("failed to init app: %s", err.Error())
+		logrus.Fatalf("Failed to initialize application: %v", err)
 	}
-	a.Run()
+	app.Run()
 }

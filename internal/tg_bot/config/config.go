@@ -3,7 +3,9 @@ package config
 import (
 	"fmt"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 	"os"
+	"strconv"
 )
 
 // Config holds the application configuration parameters.
@@ -19,11 +21,14 @@ type Config struct {
 	EnvClientKey      string // Path to the client private key file
 	EnvClientCa       string // Path to the client CA certificate file
 	EnvApiKey         string // Key for get token from server
+	EnvClientID       string // Program ID for OAUth URL
+	EnvOwnerID        int64  // Program ID for OAUth URL
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
 // It returns a pointer to the Config struct and an error if any of the environment variables are missing or invalid.
 func NewConfig() (*Config, error) {
+	var id int64
 	err := godotenv.Load("bot.env")
 	if err != nil {
 		return nil, fmt.Errorf("new load .env: %w", err)
@@ -40,6 +45,13 @@ func NewConfig() (*Config, error) {
 	config.EnvClientKey = os.Getenv("CLIENT_KEY_FILE")
 	config.EnvClientCa = os.Getenv("CLIENT_CA_FILE")
 	config.EnvApiKey = os.Getenv("API_KEY")
+	config.EnvClientID = os.Getenv("CLIENT_ID")
+	if id, err = strconv.ParseInt(os.Getenv("OWNER_ID"), 10, 64); err == nil {
+		config.EnvOwnerID = id
+	} else {
+		logrus.WithError(err).Error("Failed to parse OWNER_ID from environment")
+		return nil, err
+	}
 
 	return config, nil
 }

@@ -11,14 +11,14 @@ import (
 type Config struct {
 	EnvLogsLevel     string // Log level for the application (e.g., DEBUG, INFO)
 	EnvLogFileName   string // File's name for log (e.g., Server.log)
-	EnvOAuthEndpoint string //
-	HTTPSServer      string // Address of the HTTP server
-	ServerCert       string // Path to the server's SSL certificate
-	ServerKey        string // Path to the server's SSL key
-	ServerCa         string // Path to the server's CA file
-	ClientId         string // For access to get token from Yandex Home only to owner
-	ClientSecret     string // For access to get token from Yandex Home only to owner
-	ApiKey           string // Key for take token TGBot agent
+	EnvOAuthEndpoint string // Yandex's endpoint for token request
+	EnvHTTPSServer   string // Address of the HTTP server
+	EnvServerCert    string // Path to the server's SSL certificate
+	EnvServerKey     string // Path to the server's SSL key
+	EnvServerCa      string // Path to the server's CA file
+	EnvClientId      string // For access to request token from Yandex Home, only to an owner
+	EnvClientSecret  string // For access to request token from Yandex Home, only to an owner
+	EnvApiKey        string // Key for take token TGBot agent
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
@@ -33,13 +33,13 @@ func NewConfig() (*Config, error) {
 	config.EnvLogsLevel = os.Getenv("LOG_LEVEL")
 	config.EnvLogFileName = os.Getenv("LOG_FILE_NAME")
 	config.EnvOAuthEndpoint = os.Getenv("OAUTH_ENDPOINT")
-	config.HTTPSServer = os.Getenv("HTTPS_SERVER")
-	config.ServerCert = os.Getenv("SERVER_CERT_FILE")
-	config.ServerKey = os.Getenv("SERVER_KEY_FILE")
-	config.ServerCa = os.Getenv("SERVER_CA_FILE")
-	config.ClientId = os.Getenv("CLIENT_ID")
-	config.ClientSecret = os.Getenv("CLIENT_SECRET")
-	config.ApiKey = os.Getenv("API_KEY")
+	config.EnvHTTPSServer = os.Getenv("HTTPS_SERVER")
+	config.EnvServerCert = os.Getenv("SERVER_CERT_FILE")
+	config.EnvServerKey = os.Getenv("SERVER_KEY_FILE")
+	config.EnvServerCa = os.Getenv("SERVER_CA_FILE")
+	config.EnvClientId = os.Getenv("CLIENT_ID")
+	config.EnvClientSecret = os.Getenv("CLIENT_SECRET")
+	config.EnvApiKey = os.Getenv("API_KEY")
 
 	return config, nil
 }
