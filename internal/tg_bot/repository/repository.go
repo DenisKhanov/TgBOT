@@ -33,6 +33,11 @@ func NewUsersStateMap(envStoragePath string) *UsersState {
 	}
 }
 
+// GetTranslateState return user's translate bool status
+func (m *UsersState) GetTranslateState(chatID int64) bool {
+	return m.BatchBuffer[chatID].IsTranslating
+}
+
 // ReadFileToMemoryURL reads user states from the storage file into the in-memory buffer.
 // Returns an error if the file cannot be read or parsed.
 func (m *UsersState) ReadFileToMemoryURL() error {

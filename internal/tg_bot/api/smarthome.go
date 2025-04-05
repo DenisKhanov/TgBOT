@@ -163,7 +163,7 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device,
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	//create user's devices map for using in services
+	//create user's device map for using in services
 	userDevices := make(map[string]*models.Device)
 	for _, device := range response.Devices {
 		userDevices[device.Name] = &models.Device{
@@ -181,7 +181,7 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device,
 // Arguments:
 //   - token: OAuth token for authentication.
 //   - id: device ID to perform the action on.
-//   - value: current state (true for on, false for off); the action toggles this value.
+//   - Value: current state (true for on, false for off); the action toggles this value.
 //
 // Returns an error if the request fails.
 func (sh *YandexSmartHome) TurnOnOffAction(token, id string, value bool) error {

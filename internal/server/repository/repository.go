@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Repository represents an in-memory storage for user tokens.
+// The Repository represents an in-memory storage for user tokens.
 // It uses a map to associate user IDs with their respective token pairs.
 type Repository struct {
 	userToken map[int64]models.Tokens // Map storing user IDs and their tokens.

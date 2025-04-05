@@ -1,5 +1,5 @@
 // Package service provides functionality for interacting with the Yandex OAuth API
-// to obtain authorization tokens using client credentials and access codes.
+// to get authorization tokens using client credentials and access codes.
 package service
 
 import (
@@ -69,7 +69,7 @@ func (a *YandexAuth) GetOAuthToken(accessCode string) (models.ResponseAUTH, erro
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// Кодируем строку client_id:client_secret методом base64
+	// Кодируем строку client_id: client_secret методом base64
 	auth := base64.StdEncoding.EncodeToString([]byte(a.clientID + ":" + a.clientSecret))
 	// Добавляем заголовок Authorization
 	req.Header.Set("Authorization", "Basic "+auth)
@@ -80,7 +80,11 @@ func (a *YandexAuth) GetOAuthToken(accessCode string) (models.ResponseAUTH, erro
 		logrus.WithError(err).Error("HTTP request to Yandex OAuth failed")
 		return models.ResponseAUTH{}, err
 	}
-	defer res.Body.Close()
+	defer func() {
+		if err = res.Body.Close(); err != nil {
+			logrus.WithError(err).Errorf("Failed to close response body: %v", err)
+		}
+	}()
 
 	if res.StatusCode != http.StatusOK {
 		err = fmt.Errorf("unexpected status code: %d", res.StatusCode)

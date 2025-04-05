@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/DenisKhanov/TgBOT/internal/logcfg"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/config"
-	"github.com/DenisKhanov/TgBOT/internal/tg_bot/repository"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -123,12 +122,6 @@ func (a *App) runTelegramBot() {
 	updateConfig.Timeout = 60 // seconds timeout
 	updates := botAPI.GetUpdatesChan(updateConfig)
 
-	// Get repository as UsersState for type assertion
-	usersState, ok := a.serviceProvider.Repository().(*repository.UsersState)
-	if !ok {
-		logrus.Fatal("Repository is not of type UsersState")
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -137,7 +130,7 @@ func (a *App) runTelegramBot() {
 			if update.InlineQuery != nil {
 				myBot.HandleInlineQuery(botAPI, update.InlineQuery)
 			} else {
-				myBot.UpdateProcessing(&update, usersState)
+				myBot.UpdateProcessing(&update)
 			}
 		}
 		logrus.Info("Update channel closed")

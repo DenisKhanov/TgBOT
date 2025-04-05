@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Repository defines an interface for storing and retrieving user tokens.
+// The Repository defines an interface for storing and retrieving user tokens.
 // It abstracts the underlying storage mechanism.
 type Repository interface {
 	// SaveUserToken saves a token pair for a given user ID.

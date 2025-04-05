@@ -47,7 +47,7 @@ func newServiceProvider(yandexEndpoint, clientID, clientSecret, apiKey string) *
 
 // Service returns the service instance for business logic operations.
 // It lazily initializes the service using Yandex OAuth and repository dependencies if not already created.
-// Returns a http.Service implementation.
+// Returns http.Service implementation.
 func (s *serviceProvider) Service() http.Service {
 	s.serviceOnce.Do(func() {
 		yaOAuth := service.NewYandexAuthAPI(s.yandexEndpoint, s.clientID, s.clientSecret)
@@ -60,7 +60,7 @@ func (s *serviceProvider) Service() http.Service {
 
 // Handler returns the HTTP handler for HTTPS endpoints.
 // It lazily initializes the handler using the service and API key if not already created.
-// Returns a pointer to a http.Handler.
+// Returns a pointer to http.Handler.
 func (s *serviceProvider) Handler() *http.Handler {
 	s.handlerOnce.Do(func() {
 		s.handler = http.NewHandler(s.Service(), s.apiKey)

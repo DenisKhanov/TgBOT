@@ -81,7 +81,7 @@ type DetectLangRes struct {
 // Arguments:
 //   - endTranslate: endpoint URL for the Translate API.
 //   - endDetect: endpoint URL for the Detect Language API.
-//   - token: authentication token for API requests.
+//   - Token: authentication token for API requests.
 //
 // Returns a pointer to a YandexAPI.
 func NewYandexAPI(endTranslate, endDetect, token string) *YandexAPI {
