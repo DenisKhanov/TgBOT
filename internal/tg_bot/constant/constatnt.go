@@ -30,6 +30,7 @@ const (
 	BUTTON_TEXT_YANDEX_SEND_CODE      = "Пройти аутентификацию"
 	BUTTON_TEXT_YANDEX_GET_HOME_INFO  = "Показать информацию SmartHome"
 	BUTTON_TEXT_YANDEX_LOGIN          = "Аутентифицироваться"
+	BUTTON_TEXT_GENERATIVE_MODEL      = "Режим ИИ"
 
 	BUTTON_TEXT_PRINT_MENU = "Покажи главное меню"
 
