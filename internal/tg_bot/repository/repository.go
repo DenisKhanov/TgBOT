@@ -38,6 +38,11 @@ func (m *UsersState) GetTranslateState(chatID int64) bool {
 	return m.BatchBuffer[chatID].IsTranslating
 }
 
+// GetGenerativeState return user's translate bool status
+func (m *UsersState) GetGenerativeState(chatID int64) bool {
+	return m.BatchBuffer[chatID].IsGenerative
+}
+
 // ReadFileToMemoryURL reads user states from the storage file into the in-memory buffer.
 // Returns an error if the file cannot be read or parsed.
 func (m *UsersState) ReadFileToMemoryURL() error {
@@ -92,19 +97,18 @@ func (m *UsersState) ReadFileToMemoryURL() error {
 //   - lastUserMassage: last message sent by the user.
 //   - callbackQueryData: data from the last callback query.
 //   - isTranslating: whether the user is currently in translation mode.
-func (m *UsersState) StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating bool) {
+func (m *UsersState) StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.BatchBuffer[chatID]
-	if !ok {
-		m.BatchBuffer[chatID] = &models.UserState{}
+	m.BatchBuffer[chatID] = &models.UserState{
+		ChatID:            chatID,
+		CurrentStep:       currentStep,
+		LastUserMessages:  lastUserMassage,
+		CallbackQueryData: callbackQueryData,
+		IsTranslating:     isTranslating,
+		IsGenerative:      isGenerative,
 	}
-	m.BatchBuffer[chatID].ChatID = chatID
-	m.BatchBuffer[chatID].CurrentStep = currentStep
-	m.BatchBuffer[chatID].LastUserMessages = lastUserMassage
-	m.BatchBuffer[chatID].CallbackQueryData = callbackQueryData
-	m.BatchBuffer[chatID].IsTranslating = isTranslating
 }
 
 // SaveUserYandexSmartHomeInfo stores Yandex Smart Home token and device info for a user.
@@ -112,16 +116,15 @@ func (m *UsersState) StoreUserState(chatID int64, currentStep, lastUserMassage, 
 //   - chatID: Telegram chat ID of the user.
 //   - token: Yandex Smart Home OAuth token.
 //   - userDevices: map of device names to device details.
-func (m *UsersState) SaveUserYandexSmartHomeInfo(chatID int64, token string, userDevices map[string]*models.Device) {
+func (m *UsersState) SaveUserSmartHomeInfo(chatID int64, token string, userDevices map[string]*models.Device) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.BatchBuffer[chatID]
-	if !ok {
-		m.BatchBuffer[chatID] = &models.UserState{}
+	m.BatchBuffer[chatID] = &models.UserState{
+		Token:   token,
+		Devices: userDevices,
 	}
-	m.BatchBuffer[chatID].Token = token
-	m.BatchBuffer[chatID].Devices = userDevices
+
 }
 
 // GetUserYandexSmartHomeToken retrieves the Yandex Smart Home token for a user.
@@ -129,7 +132,7 @@ func (m *UsersState) SaveUserYandexSmartHomeInfo(chatID int64, token string, use
 //   - chatID: Telegram chat ID of the user.
 //
 // Returns the token or an error if not found.
-func (m *UsersState) GetUserYandexSmartHomeToken(chatID int64) (string, error) {
+func (m *UsersState) GetUserSmartHomeToken(chatID int64) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -147,7 +150,7 @@ func (m *UsersState) GetUserYandexSmartHomeToken(chatID int64) (string, error) {
 //   - chatID: Telegram chat ID of the user.
 //
 // Return the device map or an error if no devices are found.
-func (m *UsersState) GetUserYandexSmartHomeDevices(chatID int64) (map[string]*models.Device, error) {
+func (m *UsersState) GetUserSmartHomeDevices(chatID int64) (map[string]*models.Device, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

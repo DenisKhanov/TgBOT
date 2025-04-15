@@ -45,11 +45,11 @@ type DeviceActionState struct {
 
 // ResponseSmart represents the authentication response from the smart home API.
 type ResponseSmart struct {
-	TokenType    string `json:"token_type"`    // Type of token (e.g., "Bearer").
-	AccessToken  string `json:"access_token"`  // Access token for API requests
+	TokenType    string `json:"token_type"`    // Type of apiKey (e.g., "Bearer").
+	AccessToken  string `json:"access_token"`  // Access apiKey for API requests
 	ExpiresIn    int    `json:"expires_in"`    // Token expiration time in seconds
-	RefreshToken string `json:"refresh_token"` // Refresh token for renewing access.
-	Scope        string `json:"scope"`         // Scope of the token.
+	RefreshToken string `json:"refresh_token"` // Refresh apiKey for renewing access.
+	Scope        string `json:"scope"`         // Scope of the apiKey.
 }
 
 // userDeviceInfo represents the structure of user smart home data returned by the API.
@@ -118,7 +118,7 @@ func NewYandexSmartHomeAPI(endpoint string) *YandexSmartHome {
 
 // GetHomeInfo retrieves information about the user's smart home devices.
 // Arguments:
-//   - token: OAuth token for authentication.
+//   - apiKey: OAuth apiKey for authentication.
 //
 // Returns a map of device names to their details or an error if the request fails.
 func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device, error) {
@@ -179,7 +179,7 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device,
 
 // TurnOnOffAction performs an on/off action on a specified device.
 // Arguments:
-//   - token: OAuth token for authentication.
+//   - apiKey: OAuth apiKey for authentication.
 //   - id: device ID to perform the action on.
 //   - Value: current state (true for on, false for off); the action toggles this value.
 //

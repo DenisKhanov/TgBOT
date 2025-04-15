@@ -67,18 +67,16 @@ func (a *App) initConfig(_ context.Context) error {
 
 // initServiceProvider initializes the service provider for dependency injection.
 func (a *App) initServiceProvider(_ context.Context) error {
-	const (
-		YandexTranslateAPI  = "https://translate.api.cloud.yandex.net/translate/v2/translate" // translate
-		YandexDictionaryAPI = "https://translate.api.cloud.yandex.net/translate/v2/detect"    // detect language
-		YandexIOTAPI        = "https://api.iot.yandex.net"                                    //smart devices
-	)
 
 	a.serviceProvider = NewServiceProvider(
-		YandexTranslateAPI,
-		YandexDictionaryAPI,
-		YandexIOTAPI,
+		a.config.EnvTranslateApiEndpoint,
+		a.config.EnvDictionaryDetectApiEndpoint,
+		a.config.EnvSmartHomeEndpoint,
 		a.config.EnvServerEndpoint,
-		a.config.EnvYandexToken,
+		a.config.EnvTranslateApiKey,
+		a.config.EnvGenerativeName,
+		a.config.EnvGenerativeApiKey,
+		a.config.EnvGenerativeModel,
 		a.config.EnvStoragePath,
 		a.config.EnvClientCert,
 		a.config.EnvClientKey,

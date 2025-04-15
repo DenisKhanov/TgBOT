@@ -21,7 +21,7 @@ type Yandex interface {
 
 // YandexAPI manages interactions with the Yandex Translate and Detect Language APIs.
 type YandexAPI struct {
-	token        string       // Authentication token for API requests.
+	apiKey       string       // Authentication apiKey for API requests.
 	endTranslate string       // Endpoint URL for the Translate API.
 	endDetect    string       // Endpoint URL for the Detect Language API.
 	client       *http.Client //HTTP client
@@ -50,7 +50,7 @@ type TranslateRequest struct {
 	Format             string         `json:"format"`             // Format of the text (e.g., "PLAIN_TEXT").
 	Texts              []string       `json:"texts"`              // List of texts to translate.
 	FolderId           string         `json:"folderId"`           // Folder ID (optional).
-	Model              string         `json:"model"`              // Translation model (optional).
+	Model              string         `json:"modelName"`          // Translation modelName (optional).
 	GlossaryConfig     GlossaryConfig `json:"glossaryConfig"`     // Glossary configuration (optional).
 	Speller            bool           `json:"speller"`            // Enable spell checking.
 }
@@ -77,18 +77,18 @@ type DetectLangRes struct {
 	LanguageCode string `json:"languageCode"`
 }
 
-// NewYandexAPI creates a new instance of YandexAPI with the specified endpoints and token.
+// NewYandexAPI creates a new instance of YandexAPI with the specified endpoints and apiKey.
 // Arguments:
 //   - endTranslate: endpoint URL for the Translate API.
 //   - endDetect: endpoint URL for the Detect Language API.
-//   - Token: authentication token for API requests.
+//   - Token: authentication apiKey for API requests.
 //
 // Returns a pointer to a YandexAPI.
-func NewYandexAPI(endTranslate, endDetect, token string) *YandexAPI {
+func NewYandexAPI(endTranslate, endDetect, apiKey string) *YandexAPI {
 	return &YandexAPI{
 		endTranslate: endTranslate,
 		endDetect:    endDetect,
-		token:        token,
+		apiKey:       apiKey,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -136,7 +136,7 @@ func (y *YandexAPI) TranslateAPI(text string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", y.token)
+	req.Header.Set("Authorization", y.apiKey)
 
 	res, err := y.client.Do(req)
 	if err != nil {
@@ -207,7 +207,7 @@ func (y *YandexAPI) DetectLangAPI(text string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", y.token)
+	req.Header.Set("Authorization", y.apiKey)
 
 	res, err := y.client.Do(req)
 	if err != nil {

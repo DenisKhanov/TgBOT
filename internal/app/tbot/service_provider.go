@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/api"
 	botHand "github.com/DenisKhanov/TgBOT/internal/tg_bot/api/http"
+	"github.com/DenisKhanov/TgBOT/internal/tg_bot/infra/generative"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/repository"
 	botServ "github.com/DenisKhanov/TgBOT/internal/tg_bot/service"
@@ -17,9 +18,10 @@ import (
 // ServiceProvider manages the dependency injection for Telegram bot components.
 type ServiceProvider struct {
 	// Services
-	boringService    botServ.Boring
-	translateService botServ.YandexTranslate
-	smartHomeService botServ.YandexSmartHome
+	boringService     botServ.Boring
+	translateService  botServ.Translate
+	smartHomeService  botServ.SmartHome
+	generativeService botServ.GenerativeModel
 
 	// Repository
 	repository botServ.Repository
@@ -34,14 +36,17 @@ type ServiceProvider struct {
 	botService *botServ.TgBotServices
 
 	// API endpoints
-	translateAPI  string
-	dictionaryAPI string
-	iotAPI        string
+	translateAPIEndpoint  string
+	dictionaryAPIEndpoint string
+	smartHomeAPIEndpoint  string
 
 	// Config values
-	serverEndpoint string
-	yandexToken    string
-	storagePath    string
+	serverEndpoint   string
+	translateApiKey  string
+	generativeName   string
+	generativeApiKey string
+	generativeModel  string
+	storagePath      string
 
 	//TLS file path
 	clientCert string
@@ -55,6 +60,7 @@ type ServiceProvider struct {
 	boringOnce     sync.Once
 	translateOnce  sync.Once
 	smartHomeOnce  sync.Once
+	generativeOnce sync.Once
 	repoOnce       sync.Once
 	handlerOnce    sync.Once
 	botAPIOnce     sync.Once
@@ -63,25 +69,32 @@ type ServiceProvider struct {
 
 // NewServiceProvider creates a new instance of the service provider.
 func NewServiceProvider(
-	translateAPI, dictionaryAPI, iotAPI string,
-	serverEndpoint, yandexToken, storagePath, clientCert, clientKey, clientCa, apiKey, clientID string, ownerID int64,
+	translateAPIEndpoint, dictionaryAPIEndpoint, smartHomeAPIEndpoint string,
+	serverEndpoint, translateApiKey,
+	generativeName, generativeApiKey,
+	generativeModel, storagePath, clientCert,
+	clientKey, clientCa, apiKey,
+	clientID string, ownerID int64,
 ) *ServiceProvider {
-	if translateAPI == "" || dictionaryAPI == "" || iotAPI == "" || serverEndpoint == "" || yandexToken == "" || storagePath == "" || clientCert == "" || clientKey == "" || clientCa == "" || apiKey == "" || clientID == "" || ownerID == 0 {
+	if translateAPIEndpoint == "" || dictionaryAPIEndpoint == "" || smartHomeAPIEndpoint == "" || serverEndpoint == "" || translateApiKey == "" || generativeApiKey == "" || generativeName == "" || generativeModel == "" || storagePath == "" || clientCert == "" || clientKey == "" || clientCa == "" || apiKey == "" || clientID == "" || ownerID == 0 {
 		logrus.Fatal("All ServiceProvider configuration fields must be non-empty")
 	}
 	return &ServiceProvider{
-		translateAPI:   translateAPI,
-		dictionaryAPI:  dictionaryAPI,
-		iotAPI:         iotAPI,
-		serverEndpoint: serverEndpoint,
-		yandexToken:    yandexToken,
-		storagePath:    storagePath,
-		clientCert:     clientCert,
-		clientKey:      clientKey,
-		clientCa:       clientCa,
-		apiKey:         apiKey,
-		clientID:       clientID,
-		ownerID:        ownerID,
+		translateAPIEndpoint:  translateAPIEndpoint,
+		dictionaryAPIEndpoint: dictionaryAPIEndpoint,
+		smartHomeAPIEndpoint:  smartHomeAPIEndpoint,
+		serverEndpoint:        serverEndpoint,
+		translateApiKey:       translateApiKey,
+		generativeName:        generativeName,
+		generativeApiKey:      generativeApiKey,
+		generativeModel:       generativeModel,
+		storagePath:           storagePath,
+		clientCert:            clientCert,
+		clientKey:             clientKey,
+		clientCa:              clientCa,
+		apiKey:                apiKey,
+		clientID:              clientID,
+		ownerID:               ownerID,
 	}
 }
 
@@ -95,21 +108,38 @@ func (s *ServiceProvider) BoringService() botServ.Boring {
 }
 
 // TranslateService returns the service for translation.
-func (s *ServiceProvider) TranslateService() botServ.YandexTranslate {
+func (s *ServiceProvider) TranslateService() botServ.Translate {
 	s.translateOnce.Do(func() {
-		s.translateService = api.NewYandexAPI(s.translateAPI, s.dictionaryAPI, s.yandexToken)
+		s.translateService = api.NewYandexAPI(s.translateAPIEndpoint, s.dictionaryAPIEndpoint, s.translateApiKey)
 		logrus.Info("TranslateService initialized")
 	})
 	return s.translateService
 }
 
 // SmartHomeService returns the service for Yandex smart home integration.
-func (s *ServiceProvider) SmartHomeService() botServ.YandexSmartHome {
+func (s *ServiceProvider) SmartHomeService() botServ.SmartHome {
 	s.smartHomeOnce.Do(func() {
-		s.smartHomeService = api.NewYandexSmartHomeAPI(s.iotAPI)
+		s.smartHomeService = api.NewYandexSmartHomeAPI(s.smartHomeAPIEndpoint)
 		logrus.Info("SmartHomeService initialized")
 	})
 	return s.smartHomeService
+}
+
+// GenerativeService returns the service for GenerativeModel generative model integration.
+func (s *ServiceProvider) GenerativeService() (botServ.GenerativeModel, error) {
+	var err error
+	s.generativeOnce.Do(func() {
+		s.generativeService, err = generative.ModelFactory(s.generativeName, s.generativeApiKey, s.generativeModel, 0, 1.0)
+		if err != nil {
+			logrus.Errorf("Failed to initialize Generative service: %v", err)
+			s.generativeService = nil // Сброс при ошибке
+		}
+	})
+	if s.generativeService == nil {
+		return nil, fmt.Errorf("generative service not initialized")
+	}
+	logrus.Info("Generative model initialized")
+	return s.generativeService, nil
 }
 
 // The Repository returns the repository for user state management.
@@ -167,6 +197,11 @@ func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotSer
 		logrus.Errorf("Failed to get handler: %v", err)
 		return nil, fmt.Errorf("bot service not initialized")
 	}
+	generativeService, err := s.GenerativeService()
+	if err != nil {
+		logrus.Errorf("Failed to get generative service: %v", err)
+		return nil, fmt.Errorf("bot service not initialized")
+	}
 	AuthURL := fmt.Sprintf("https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s/callback&state=", s.clientID, s.serverEndpoint)
 
 	s.botServiceOnce.Do(func() {
@@ -174,6 +209,7 @@ func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotSer
 			s.BoringService(),
 			s.TranslateService(),
 			s.SmartHomeService(),
+			generativeService,
 			s.Repository(),
 			botAPI,
 			handler,

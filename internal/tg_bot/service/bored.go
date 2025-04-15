@@ -28,9 +28,9 @@ func NewBoringAPI(activities []string) *BoringAPI {
 	}
 }
 
-// BoredAPI returns a randomly selected activity from the list.
+// WhatToDo returns a randomly selected activity from the list.
 // Returns a string representing the selected activity.
-func (b *BoringAPI) BoredAPI() string {
+func (b *BoringAPI) WhatToDo() string {
 	if len(b.activities) == 0 {
 		return "" // Or return an error if the method signature changes
 	}

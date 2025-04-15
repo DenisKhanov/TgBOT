@@ -16,35 +16,35 @@ import (
 
 // Boring defines the interface for suggesting activities.
 type Boring interface {
-	BoredAPI() string
+	WhatToDo() string
 }
 
-// YandexTranslate defines the interface for translation operations.
-type YandexTranslate interface {
+// Translate defines the interface for translation operations.
+type Translate interface {
 	TranslateAPI(text string) (string, error)  // Retrieves smart home device info.
 	DetectLangAPI(text string) (string, error) // Toggles a device on or off.
 }
 
-// YandexSmartHome defines the interface for Yandex Smart Home operations.
-type YandexSmartHome interface {
+// SmartHome defines the interface for Yandex Smart Home operations.
+type SmartHome interface {
 	GetHomeInfo(token string) (map[string]*models.Device, error)
 	TurnOnOffAction(token, id string, value bool) error
 }
 
-// YandexAuth defines the interface for Yandex authentication (not implemented in this code).
-type YandexAuth interface {
-	AuthAPI(accessCode string) (string, error)
+type GenerativeModel interface {
+	GenerateTextMsg(text string) (string, error)
 }
 
 // The Repository defines the interface for user state persistence.
 type Repository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
-	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating bool)
-	SaveUserYandexSmartHomeInfo(chatID int64, token string, devices map[string]*models.Device)
-	GetUserYandexSmartHomeToken(chatID int64) (string, error)
-	GetUserYandexSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
+	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative bool)
+	SaveUserSmartHomeInfo(chatID int64, token string, devices map[string]*models.Device)
+	GetUserSmartHomeToken(chatID int64) (string, error)
+	GetUserSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
 	GetTranslateState(chatID int64) bool
+	GetGenerativeState(chatID int64) bool
 }
 
 // Handler defines the interface for OAuth token handling.
@@ -54,17 +54,19 @@ type Handler interface {
 
 // TgBotServices is the main service struct for the Telegram bot, integrating all dependencies.
 type TgBotServices struct {
-	Boring          Boring                // Activity suggestion service.
-	YandexTranslate YandexTranslate       // Translation service.
-	YandexSmartHome YandexSmartHome       // Smart home service.
-	Repository      Repository            // User state repository.
-	ChatID          int64                 // Current chat ID.
-	Bot             *tgbotapi.BotAPI      // Telegram Bot API instance.
-	Handler         Handler               // OAuth handler.
-	OAuthURL        string                // URL for OAuth authentication.
-	OwnerID         int64                 // Owner's chatID for access to Yandex smart home menu button
-	debounceTimers  map[int64]*time.Timer // Per-chat debounce timers
-	mu              *sync.Mutex           // Protects debounceTimers
+	Boring         Boring    // Activity suggestion service.
+	Translate      Translate // Translation service.
+	SmartHome      SmartHome // Smart home service.
+	Generative     GenerativeModel
+	Repository     Repository            // User state repository.
+	ChatID         int64                 // Current chat ID.
+	Bot            *tgbotapi.BotAPI      // Telegram Bot API instance.
+	Handler        Handler               // OAuth handler.
+	OAuthURL       string                // URL for OAuth authentication.
+	OwnerID        int64                 // Owner's chatID for access to Yandex smart home menu button
+	debounceTimers map[int64]*time.Timer // Per-chat debounce timers
+	lastQueries    map[int64]string
+	mu             *sync.Mutex // Protects debounceTimers
 }
 
 // NewTgBot creates a new TgBotServices instance with the specified dependencies.
@@ -78,18 +80,20 @@ type TgBotServices struct {
 //   - URL: OAuth URL.
 //
 // Returns a pointer to a TgBotServices.
-func NewTgBot(boring Boring, yandex YandexTranslate, yandexSmartHome YandexSmartHome, repository Repository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
+func NewTgBot(boring Boring, translate Translate, smartHome SmartHome, generative GenerativeModel, repository Repository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
 	return &TgBotServices{
-		Boring:          boring,
-		YandexTranslate: yandex,
-		YandexSmartHome: yandexSmartHome,
-		Repository:      repository,
-		Bot:             bot,
-		Handler:         handler,
-		OAuthURL:        URL,
-		OwnerID:         ownerID,
-		debounceTimers:  make(map[int64]*time.Timer),
-		mu:              &sync.Mutex{},
+		Boring:         boring,
+		Translate:      translate,
+		SmartHome:      smartHome,
+		Generative:     generative,
+		Repository:     repository,
+		Bot:            bot,
+		Handler:        handler,
+		OAuthURL:       URL,
+		OwnerID:        ownerID,
+		debounceTimers: make(map[int64]*time.Timer),
+		lastQueries:    make(map[int64]string),
+		mu:             &sync.Mutex{},
 	}
 }
 
@@ -178,6 +182,9 @@ func (b *TgBotServices) showBarMenu() error {
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_TRANSLATE),
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_YANDEX_DDIALOGS),
 		),
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MODEL),
+		),
 	)
 	// Дополнительные настройки клавиатуры
 	markup.ResizeKeyboard = true  // Подгоняет размер клавиатуры под экран
@@ -205,11 +212,12 @@ func (b *TgBotServices) showHeadMenu() error {
 //   - bot: Telegram Bot API instance.
 //   - query: the inline query from the user.
 func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.InlineQuery) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	chatID := query.From.ID // Используем ID пользователя как ключ для debounce
+	chatID := query.From.ID
 	currentInput := query.Query
+
+	// Потокобезопасно обновляем последний запрос и таймер
+	b.mu.Lock()
+	b.lastQueries[chatID] = currentInput
 
 	// Останавливаем предыдущий таймер, если он существует
 	if timer, exists := b.debounceTimers[chatID]; exists {
@@ -218,25 +226,37 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 
 	// Запускаем новый таймер с debounce на 1.5 секунды
 	b.debounceTimers[chatID] = time.AfterFunc(1500*time.Millisecond, func() {
+		// После задержки проверяем, актуален ли запрос
+		b.mu.Lock()
+		lastQuery := b.lastQueries[chatID]
+		// Удаляем таймер после выполнения
+		delete(b.debounceTimers, chatID)
+		b.mu.Unlock()
+
+		// Если текст запроса изменился за время ожидания, игнорируем
+		if lastQuery != currentInput {
+			logrus.WithField("chatID", chatID).Info("Запрос устарел, пропускаем")
+			return
+		}
+
 		var results []interface{}
 
 		// Если есть ввод, показываем перевод
 		if currentInput != "" {
-			translatedText, err := b.YandexTranslate.TranslateAPI(currentInput)
+			textMsg, err := b.Generative.GenerateTextMsg(currentInput)
 			if err != nil {
-				logrus.WithError(err).Error("Inline query translation failed")
+				logrus.WithError(err).Error("Inline query generative text dialog failed")
 				return
 			}
 			result := tgbotapi.NewInlineQueryResultArticleMarkdown(
-				"1", // Уникальный ID результата
-				"Перевести введенный текст", // Заголовок
-				translatedText, // Текст результата
+				"1",
+				"Спросить у ИИ",
+				textMsg,
 			)
 			results = append(results, result)
 		} else {
 			// Если ввода нет, показываем два варианта
-			// 1. Предложение активности
-			activity := b.Boring.BoredAPI()
+			activity := b.Boring.WhatToDo()
 			activityResult := tgbotapi.NewInlineQueryResultArticleMarkdown(
 				"1",
 				"Предложи чем мне заняться",
@@ -244,7 +264,6 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 			)
 			results = append(results, activityResult)
 
-			// 2. Подборка фильмов со ссылкой
 			movieResult := tgbotapi.NewInlineQueryResultArticle(
 				"2",
 				"Посоветуй подборку фильмов",
@@ -260,26 +279,25 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 			results = append(results, movieResult)
 		}
 
-		fmt.Println("Обновляю")
 		// Конфигурация ответа inline-запроса
 		inlineConf := tgbotapi.InlineConfig{
 			InlineQueryID: query.ID,
 			Results:       results,
-			CacheTime:     0, // Отключаем кэширование для свежести результатов
+			CacheTime:     0,
 			IsPersonal:    true,
 		}
 
-		// Используем AnswerInlineQuery вместо Send
 		if _, err := bot.Request(inlineConf); err != nil {
 			logrus.WithError(err).Error("Failed to send inline query response")
 		}
 	})
+	b.mu.Unlock()
 }
 
 // SendActivityMsg sends a random activity suggestion to the current chat.
 // Returns an error if the message fails to send.
 func (b *TgBotServices) SendActivityMsg() error {
-	text := b.Boring.BoredAPI()
+	text := b.Boring.WhatToDo()
 	return b.sendMessage(b.ChatID, text, 0, nil)
 }
 
@@ -294,18 +312,18 @@ func (b *TgBotServices) SendMoviesLink() error {
 	return b.sendMessage(b.ChatID, "Тут представлена подборка отличных фильмов по мнению Дениса!", 0, markup)
 }
 
-// showYandexSmartMenu displays a menu for Yandex Smart Home controls, restricted to the bot owner.
+// showSmartMenu displays a menu for Smart Home controls, restricted to the bot owner.
 // Returns an error if the user is not the owner, authentication fails, or the message fails to send it.
-func (b *TgBotServices) showYandexSmartMenu() error {
+func (b *TgBotServices) showSmartMenu() error {
 	if b.ChatID != b.OwnerID {
 		return b.sendMessage(b.ChatID, "Извини, но доступ к этому меню есть только у моего Хозяина.", 0, nil)
 	}
-	if _, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID); err != nil {
-		if err = b.GetYandexSmartHomeToken(b.ChatID); err != nil {
-			return b.showYandexOAuthButton()
+	if _, err := b.Repository.GetUserSmartHomeToken(b.ChatID); err != nil {
+		if err = b.getSmartHomeToken(b.ChatID); err != nil {
+			return b.showOAuthButton()
 		}
 	}
-	devices, err := b.Repository.GetUserYandexSmartHomeDevices(b.ChatID)
+	devices, err := b.Repository.GetUserSmartHomeDevices(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Не удалось загрузить устройства", 0, nil)
 	}
@@ -317,7 +335,6 @@ func (b *TgBotServices) showYandexSmartMenu() error {
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO),
 		),
 	}
-	//TODO: реализовать вкл или выкл в зависимости от состояния устройства
 
 	for name, device := range devices {
 		state := "Включить"
@@ -334,9 +351,9 @@ func (b *TgBotServices) showYandexSmartMenu() error {
 	return b.sendMessage(b.ChatID, "Выберите пункт ↓", 0, markup)
 }
 
-// showYandexOAuthButton prompts the user to authenticate with Yandex for Smart Home access.
+// showOAuthButton prompts the user to authenticate with Yandex for Smart Home access.
 // Returns an error if the message fails to send.
-func (b *TgBotServices) showYandexOAuthButton() error {
+func (b *TgBotServices) showOAuthButton() error {
 	strChatID := strconv.FormatInt(b.ChatID, 10)
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -346,37 +363,37 @@ func (b *TgBotServices) showYandexOAuthButton() error {
 	return b.sendMessage(b.ChatID, "Нужно пройти аутентификацию ↓", 0, markup)
 }
 
-// GetYandexSmartHomeToken retrieves and stores a Yandex Smart Home token for the specified chat.
+// getSmartHomeToken retrieves and stores a Smart Home token for the specified chat.
 // Arguments:
 //   - chatID: the ID of the chat to authenticate.
 //
 // Returns an error if token retrieval or device info fetching fails.
-func (b *TgBotServices) GetYandexSmartHomeToken(chatID int64) error {
+func (b *TgBotServices) getSmartHomeToken(chatID int64) error {
 	tokenData, err := b.Handler.GetUserToken(chatID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get Yandex token")
 		return err
 	}
 
-	userDevices, err := b.YandexSmartHome.GetHomeInfo(tokenData.AccessToken)
+	userDevices, err := b.SmartHome.GetHomeInfo(tokenData.AccessToken)
 	if err != nil {
 		b.sendMessage(b.ChatID, "Произошла ошибка, не удалось получить информацию об устройствах", 0, nil)
 		return fmt.Errorf("failed to get home info: %w", err)
 	}
 
-	b.Repository.SaveUserYandexSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
+	b.Repository.SaveUserSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
 	return b.sendMessage(b.ChatID, "Авторизация прошла успешно", 0, nil)
 }
 
-// SendUserHomeInfo sends information about the user's Yandex Smart Home devices.
+// showSmartHomeInfo sends information about the user's Smart Home devices.
 // Returns an error if token retrieval, device info fetching, or message sending fails.
-func (b *TgBotServices) SendUserHomeInfo() error {
-	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+func (b *TgBotServices) showSmartHomeInfo() error {
+	token, err := b.Repository.GetUserSmartHomeToken(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
 	}
 
-	userHomeInfoData, err := b.YandexSmartHome.GetHomeInfo(token)
+	userHomeInfoData, err := b.SmartHome.GetHomeInfo(token)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, не удалось получить информацию от сервера", 0, nil)
 	}
@@ -392,18 +409,18 @@ func (b *TgBotServices) SendUserHomeInfo() error {
 	return b.sendMessage(b.ChatID, text, 0, nil)
 }
 
-// YandexDeviceTurnOnOff toggles the state of a specified Yandex Smart Home device.
+// setDeviceTurnOnOffStatus toggles the state of a specified Smart Home device.
 // Arguments:
 //   - deviceName: the name of the device to toggle.
 //
 // Returns an error if token retrieval, device lookup, state change, or message sending fails.
-func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) error {
-	token, err := b.Repository.GetUserYandexSmartHomeToken(b.ChatID)
+func (b *TgBotServices) setDeviceTurnOnOffStatus(deviceName string) error {
+	token, err := b.Repository.GetUserSmartHomeToken(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
 	}
 
-	devices, err := b.Repository.GetUserYandexSmartHomeDevices(b.ChatID)
+	devices, err := b.Repository.GetUserSmartHomeDevices(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, устройства не найдены", 0, nil)
 	}
@@ -413,7 +430,7 @@ func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) error {
 
 	}
 
-	if err = b.YandexSmartHome.TurnOnOffAction(token, device.ID, device.ActualState); err != nil {
+	if err = b.SmartHome.TurnOnOffAction(token, device.ID, device.ActualState); err != nil {
 		return b.sendMessage(b.ChatID, "Не удалось подключиться к устройству", 0, nil)
 	}
 
@@ -431,12 +448,28 @@ func (b *TgBotServices) YandexDeviceTurnOnOff(deviceName string) error {
 //
 // Returns an error if translation or message sending fails.
 func (b *TgBotServices) translateText(update *tgbotapi.Update) error {
-	translatedText, err := b.YandexTranslate.TranslateAPI(update.Message.Text)
+	translatedText, err := b.Translate.TranslateAPI(update.Message.Text)
 	if err != nil {
 		logrus.WithError(err).Error("Translation failed")
 		return err
 	}
 	return b.sendMessage(b.ChatID, translatedText, update.Message.MessageID, nil)
+}
+
+// translateText translates the text from the provided update and sends it as a reply.
+// Arguments:
+//   - update: the Telegram update containing the text to translate.
+//
+// Returns an error if translation or message sending fails.
+func (b *TgBotServices) generativeText(update *tgbotapi.Update) error {
+	b.sendMessage(b.ChatID, "Я обрабатываю ваш запрос...", update.Message.MessageID, nil)
+	aiResponse, err := b.Generative.GenerateTextMsg(update.Message.Text)
+	if err != nil {
+		logrus.WithError(err).Error("Request to generative model failed")
+		b.sendMessage(b.ChatID, "На данный момент ИИ не доступен((", update.Message.MessageID, nil)
+		return err
+	}
+	return b.sendMessage(b.ChatID, aiResponse, update.Message.MessageID, nil)
 }
 
 // UpdateProcessing handles incoming Telegram updates (messages and callback queries).
@@ -465,32 +498,37 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 			errOne = b.SendMoviesLink()
 			errTwo = b.showBarMenu()
 		case text == constant.BUTTON_TEXT_YANDEX_DDIALOGS:
-			errOne = b.showYandexSmartMenu()
+			errOne = b.showSmartMenu()
 		case text == constant.BUTTON_TEXT_YANDEX_LOGIN:
-			errOne = b.showYandexOAuthButton()
+			errOne = b.showOAuthButton()
 		case text == constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO:
-			errOne = b.SendUserHomeInfo()
-			errTwo = b.showYandexSmartMenu()
+			errOne = b.showSmartHomeInfo()
+			errTwo = b.showSmartMenu()
+		case text == constant.BUTTON_TEXT_GENERATIVE_MODEL:
+			b.Repository.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true) // Устанавливаем состояние перевода в true
+			errOne = b.sendMessage(b.ChatID, "Вы в режиме общения с ИИ.\nВведите свой вопрос или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_TRANSLATE:
-			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true) // Устанавливаем состояние перевода в true
+			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true, false) // Устанавливаем состояние перевода в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме перевода.\nВведите текст для перевода или /stop для выхода.", 0, nil)
 		case text == "/start":
 			logrus.Infof("Message [%s] from %s (chat %d)", update.Message.Text, update.Message.From.UserName, b.ChatID)
-			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false)
+			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false, false)
 			errOne = b.askToPrintIntro()
 		case text == "/stop":
-			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false)
-			errOne = b.sendMessage(b.ChatID, "Режим перевода выключен.", 0, nil)
+			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false, false)
+			errOne = b.sendMessage(b.ChatID, "Возврат в основное меню", 0, nil)
 			errTwo = b.showBarMenu()
 		case b.Repository.GetTranslateState(b.ChatID):
 			errOne = b.translateText(update)
+		case b.Repository.GetGenerativeState(b.ChatID):
+			errOne = b.generativeText(update)
 		case text == "Включить: "+strings.TrimPrefix(text, "Включить: "), text == "Выключить: "+strings.TrimPrefix(text, "Выключить: "): // Dynamic device buttons
 			deviceName := strings.Fields(text)[1]
 			fmt.Println(deviceName)
-			errOne = b.YandexDeviceTurnOnOff(deviceName)
-			errTwo = b.showYandexSmartMenu()
+			errOne = b.setDeviceTurnOnOffStatus(deviceName)
+			errTwo = b.showSmartMenu()
 		default:
-			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false)
+			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false, false)
 			errOne = b.sendSorryMsg(update)
 		}
 		if errOne != nil || errTwo != nil {
