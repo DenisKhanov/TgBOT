@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/sirupsen/logrus"
@@ -53,7 +54,7 @@ func NewGeminiAPI(apiKey string, modelName string, maxTokens int, temperature fl
 	}, nil
 }
 
-func (g GeminiAPI) GenerateTextMsg(text string) (string, error) {
+func (g *GeminiAPI) GenerateTextMsg(text string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -67,4 +68,12 @@ func (g GeminiAPI) GenerateTextMsg(text string) (string, error) {
 		return string(text), nil
 	}
 	return "", err
+}
+
+func (g *GeminiAPI) ChangeGenerativeModelName(modelName string) error {
+	if modelName == "" {
+		return errors.New("model name can't be empty")
+	}
+	g.model = g.client.GenerativeModel(modelName)
+	return nil
 }

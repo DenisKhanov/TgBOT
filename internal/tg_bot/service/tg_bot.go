@@ -33,18 +33,20 @@ type SmartHome interface {
 
 type GenerativeModel interface {
 	GenerateTextMsg(text string) (string, error)
+	ChangeGenerativeModelName(modelName string) error
 }
 
 // The Repository defines the interface for user state persistence.
 type Repository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
-	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative bool)
+	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative, IsChangingGenModel bool)
 	SaveUserSmartHomeInfo(chatID int64, token string, devices map[string]*models.Device)
 	GetUserSmartHomeToken(chatID int64) (string, error)
 	GetUserSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
 	GetTranslateState(chatID int64) bool
 	GetGenerativeState(chatID int64) bool
+	GetChangeModelState(chatID int64) bool
 }
 
 // Handler defines the interface for OAuth token handling.
@@ -184,6 +186,7 @@ func (b *TgBotServices) showBarMenu() error {
 		),
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MODEL),
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MENU),
 		),
 	)
 	// Дополнительные настройки клавиатуры
@@ -328,7 +331,6 @@ func (b *TgBotServices) showSmartMenu() error {
 		return b.sendMessage(b.ChatID, "Не удалось загрузить устройства", 0, nil)
 	}
 
-	//return b.sendMessage(b.ChatID, "Мы советует эти заведения из раздела Бар:", 0, markup)
 	rows := [][]tgbotapi.KeyboardButton{
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_PRINT_MENU),
@@ -456,6 +458,26 @@ func (b *TgBotServices) translateText(update *tgbotapi.Update) error {
 	return b.sendMessage(b.ChatID, translatedText, update.Message.MessageID, nil)
 }
 
+// showGenerativeMenu displays a menu for Generative models controls, restricted to the bot owner.
+// Returns an error if the user is not the owner, authentication fails, or the message fails to send it.
+func (b *TgBotServices) showGenerativeMenu() error {
+	if b.ChatID != b.OwnerID {
+		return b.sendMessage(b.ChatID, "Извини, но доступ к этому меню есть только у моего Хозяина.", 0, nil)
+	}
+
+	rows := [][]tgbotapi.KeyboardButton{
+		tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_CHANGE_MODEL),
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_PRINT_MENU),
+		),
+	}
+	markup := tgbotapi.NewReplyKeyboard(rows...)
+	// Дополнительные настройки клавиатуры
+	markup.ResizeKeyboard = true  // Подгоняет размер клавиатуры под экран
+	markup.OneTimeKeyboard = true // Скрывает клавиатуру после выбора (опционально)
+	return b.sendMessage(b.ChatID, "Выберите пункт ↓", 0, markup)
+}
+
 // translateText translates the text from the provided update and sends it as a reply.
 // Arguments:
 //   - update: the Telegram update containing the text to translate.
@@ -470,6 +492,17 @@ func (b *TgBotServices) generativeText(update *tgbotapi.Update) error {
 		return err
 	}
 	return b.sendMessage(b.ChatID, aiResponse, update.Message.MessageID, nil)
+}
+
+// changeGenerativeModel
+func (b *TgBotServices) changeGenerativeModel(update *tgbotapi.Update) error {
+	if err := b.Generative.ChangeGenerativeModelName(update.Message.Text); err != nil {
+		logrus.WithError(err).Error("Change generative model failed")
+		b.sendMessage(b.ChatID, "На данный момент сменить генеративную модель не удалось. Попробуй проверить правильно ли ты указал название модели или есть ли к ней доступ у твоего аккаунта!", update.Message.MessageID, nil)
+		return err
+	}
+
+	return b.sendMessage(b.ChatID, "Смена произошла успешно!", update.Message.MessageID, nil)
 }
 
 // UpdateProcessing handles incoming Telegram updates (messages and callback queries).
@@ -504,19 +537,27 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 		case text == constant.BUTTON_TEXT_YANDEX_GET_HOME_INFO:
 			errOne = b.showSmartHomeInfo()
 			errTwo = b.showSmartMenu()
+		case text == constant.BUTTON_TEXT_GENERATIVE_MENU:
+			errOne = b.showGenerativeMenu()
+		case text == constant.BUTTON_TEXT_CHANGE_MODEL:
+			b.Repository.StoreUserState(b.ChatID, "смена ИИ", "", choiceCode, false, false, true) // Устанавливаем состояние перевода в true
+			errOne = b.sendMessage(b.ChatID, "Вы в режиме смены генеративной модели.\nВведи название генеративной модели с сайта https://openrouter.ai/models. Например: deepseek/deepseek-chat-v3-0324:free или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_GENERATIVE_MODEL:
-			b.Repository.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true) // Устанавливаем состояние перевода в true
+			b.Repository.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true, false) // Устанавливаем состояние перевода в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме общения с ИИ.\nВведите свой вопрос или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_TRANSLATE:
-			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true, false) // Устанавливаем состояние перевода в true
+			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true, false, false) // Устанавливаем состояние перевода в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме перевода.\nВведите текст для перевода или /stop для выхода.", 0, nil)
 		case text == "/start":
 			logrus.Infof("Message [%s] from %s (chat %d)", update.Message.Text, update.Message.From.UserName, b.ChatID)
-			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false, false)
+			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false, false, false)
 			errOne = b.askToPrintIntro()
 		case text == "/stop":
-			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false, false)
+			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false, false, false)
 			errOne = b.sendMessage(b.ChatID, "Возврат в основное меню", 0, nil)
+			errTwo = b.showBarMenu()
+		case b.Repository.GetChangeModelState(b.ChatID):
+			errOne = b.changeGenerativeModel(update)
 			errTwo = b.showBarMenu()
 		case b.Repository.GetTranslateState(b.ChatID):
 			errOne = b.translateText(update)
@@ -528,7 +569,7 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 			errOne = b.setDeviceTurnOnOffStatus(deviceName)
 			errTwo = b.showSmartMenu()
 		default:
-			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false, false)
+			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false, false, false)
 			errOne = b.sendSorryMsg(update)
 		}
 		if errOne != nil || errTwo != nil {

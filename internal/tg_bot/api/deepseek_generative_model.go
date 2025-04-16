@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/go-deepseek/deepseek"
 	"github.com/go-deepseek/deepseek/request"
@@ -18,7 +19,7 @@ type DeepSeekAPI struct {
 	temperature float32         // Температура для управления креативностью (опционально)
 }
 
-// NewOpenRouterAPI создает новый экземпляр OpenRouterAPI
+// NewDeepSeekAPI создает новый экземпляр NewDeepSeekAPI
 func NewDeepSeekAPI(apiKey string, modelName string, maxTokens int, temperature float32) (*DeepSeekAPI, error) {
 	// Создаем контекст
 	ctx := context.Background()
@@ -72,4 +73,35 @@ func (d *DeepSeekAPI) GenerateTextMsg(text string) (string, error) {
 
 	// Извлекаем текст из ответа
 	return resp.Choices[0].Message.Content, nil
+}
+
+func (d *DeepSeekAPI) ChangeGenerativeModelName(modelName string) error {
+	if modelName == "" {
+		return errors.New("model name can't be empty")
+	}
+	ctx, cancel := context.WithTimeout(d.ctx, 15*time.Second)
+	defer cancel()
+
+	completionsRequest := &request.ChatCompletionsRequest{
+		Model: modelName,
+		Messages: []*request.Message{
+			{Role: "user", Content: "Hello, are you working?"},
+		},
+		Stream:    false,
+		MaxTokens: 10, // Минимальное количество токенов для теста
+	}
+
+	logrus.WithField("model", modelName).Info("Checking if model is working")
+	resp, err := d.client.CallChatCompletionsChat(ctx, completionsRequest)
+	if err != nil {
+		return fmt.Errorf("failed to check model %s: %w", modelName, err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return fmt.Errorf("no choices returned from model %s", modelName)
+	}
+	d.modelName = modelName
+	logrus.WithField("model", modelName).Info("Model is changed and working")
+	return nil
+
 }

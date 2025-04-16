@@ -31,6 +31,8 @@ const (
 	BUTTON_TEXT_YANDEX_GET_HOME_INFO  = "Показать информацию SmartHome"
 	BUTTON_TEXT_YANDEX_LOGIN          = "Аутентифицироваться"
 	BUTTON_TEXT_GENERATIVE_MODEL      = "Режим ИИ"
+	BUTTON_TEXT_CHANGE_MODEL          = "Сменить модель ИИ"
+	BUTTON_TEXT_GENERATIVE_MENU       = "Покажи меню ИИ"
 
 	BUTTON_TEXT_PRINT_MENU = "Покажи главное меню"
 
@@ -38,6 +40,7 @@ const (
 	BUTTON_CODE_WHITCH_MOVIE_TO_WATCH = "which_movie_to_watch"
 	BUTTON_CODE_TRANSLATE             = "text_translate"
 	BUTTON_CODE_YANDEX_DDIALOGS       = "yandex_dialogs"
+
 	//BUTTON_CODE_YANDEX_LOGIN          = "yandex_login"
 	//BUTTON_CODE_PRINT_INTRO           = "print_intro"
 	//BUTTON_CODE_SKIP_INTRO            = "skip_intro"
