@@ -108,18 +108,19 @@ type TgBotServices struct {
 // Returns a pointer to a TgBotServices.
 func NewTgBot(boring Boring, translate Translate, smartHome SmartHome, generative GenerativeModel, stateRepository UsersChatStateRepository, aiDialogRepository AIDialogHistoryRepository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
 	return &TgBotServices{
-		Boring:         boring,
-		Translate:      translate,
-		SmartHome:      smartHome,
-		Generative:     generative,
-		StateRepo:      stateRepository,
-		AIDialogRepo:   aiDialogRepository,
-		Bot:            bot,
-		Handler:        handler,
-		OAuthURL:       URL,
-		OwnerID:        ownerID,
-		debounceTimers: make(map[int64]*time.Timer),
-		lastQueries:    make(map[int64]string),
+		Boring:            boring,
+		Translate:         translate,
+		SmartHome:         smartHome,
+		Generative:        generative,
+		StateRepo:         stateRepository,
+		AIDialogRepo:      aiDialogRepository,
+		dialogHistorySize: 50,
+		Bot:               bot,
+		Handler:           handler,
+		OAuthURL:          URL,
+		OwnerID:           ownerID,
+		debounceTimers:    make(map[int64]*time.Timer),
+		lastQueries:       make(map[int64]string),
 		pendingReplies: make(map[string]struct {
 			ChatID    int64
 			MessageID int
@@ -214,7 +215,7 @@ func (b *TgBotServices) showBarMenu() error {
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_YANDEX_DDIALOGS),
 		),
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_STREAM_GENERATIVE_MODEL),
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MODEL),
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MENU),
 		),
 	)
@@ -734,7 +735,7 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 		case text == constant.BUTTON_TEXT_CHANGE_MODEL:
 			b.StateRepo.StoreUserState(b.ChatID, "смена ИИ", "", choiceCode, false, false, true, false) // Устанавливаем состояние смены генеративной модели в true
 			errOne = b.sendMessage(b.ChatID, "Ты в режиме смены генеративной модели.\nВведи название генеративной модели с сайта https://openrouter.ai/models. Например: deepseek/deepseek-chat-v3-0324:free или /stop для выхода.", 0, nil)
-		case text == constant.BUTTON_TEXT_STREAM_GENERATIVE_MODEL:
+		case text == constant.BUTTON_TEXT_GENERATIVE_MODEL || text == constant.BUTTON_TEXT_STREAM_GENERATIVE_MODEL:
 			b.StateRepo.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true, false, false) // Устанавливаем состояние режима общения с ИИ в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме общения с ИИ.\nВведите свой вопрос или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_TRANSLATE:
