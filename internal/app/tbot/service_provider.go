@@ -23,8 +23,9 @@ type ServiceProvider struct {
 	smartHomeService  botServ.SmartHome
 	generativeService botServ.GenerativeModel
 
-	// Repository
-	repository botServ.Repository
+	// ChatStateRepository
+	usersStateRepo  botServ.UsersChatStateRepository
+	aiDialogHistory botServ.AIDialogHistoryRepository
 
 	// Handler
 	handler botServ.Handler
@@ -41,12 +42,13 @@ type ServiceProvider struct {
 	smartHomeAPIEndpoint  string
 
 	// Config values
-	serverEndpoint   string
-	translateApiKey  string
-	generativeName   string
-	generativeApiKey string
-	generativeModel  string
-	storagePath      string
+	serverEndpoint    string
+	translateApiKey   string
+	generativeName    string
+	generativeApiKey  string
+	generativeModel   string
+	storagePath       string
+	dialogStoragePath string
 
 	//TLS file path
 	clientCert string
@@ -57,14 +59,15 @@ type ServiceProvider struct {
 	clientID string
 	ownerID  int64
 
-	boringOnce     sync.Once
-	translateOnce  sync.Once
-	smartHomeOnce  sync.Once
-	generativeOnce sync.Once
-	repoOnce       sync.Once
-	handlerOnce    sync.Once
-	botAPIOnce     sync.Once
-	botServiceOnce sync.Once
+	boringOnce       sync.Once
+	translateOnce    sync.Once
+	smartHomeOnce    sync.Once
+	generativeOnce   sync.Once
+	stateRepoOnce    sync.Once
+	aiDialogRepoOnce sync.Once
+	handlerOnce      sync.Once
+	botAPIOnce       sync.Once
+	botServiceOnce   sync.Once
 }
 
 // NewServiceProvider creates a new instance of the service provider.
@@ -72,11 +75,11 @@ func NewServiceProvider(
 	translateAPIEndpoint, dictionaryAPIEndpoint, smartHomeAPIEndpoint string,
 	serverEndpoint, translateApiKey,
 	generativeName, generativeApiKey,
-	generativeModel, storagePath, clientCert,
+	generativeModel, storagePath, dialogStoragePath, clientCert,
 	clientKey, clientCa, apiKey,
 	clientID string, ownerID int64,
 ) *ServiceProvider {
-	if translateAPIEndpoint == "" || dictionaryAPIEndpoint == "" || smartHomeAPIEndpoint == "" || serverEndpoint == "" || translateApiKey == "" || generativeApiKey == "" || generativeName == "" || generativeModel == "" || storagePath == "" || clientCert == "" || clientKey == "" || clientCa == "" || apiKey == "" || clientID == "" || ownerID == 0 {
+	if translateAPIEndpoint == "" || dictionaryAPIEndpoint == "" || smartHomeAPIEndpoint == "" || serverEndpoint == "" || translateApiKey == "" || generativeApiKey == "" || generativeName == "" || generativeModel == "" || storagePath == "" || dialogStoragePath == "" || clientCert == "" || clientKey == "" || clientCa == "" || apiKey == "" || clientID == "" || ownerID == 0 {
 		logrus.Fatal("All ServiceProvider configuration fields must be non-empty")
 	}
 	return &ServiceProvider{
@@ -89,6 +92,7 @@ func NewServiceProvider(
 		generativeApiKey:      generativeApiKey,
 		generativeModel:       generativeModel,
 		storagePath:           storagePath,
+		dialogStoragePath:     dialogStoragePath,
 		clientCert:            clientCert,
 		clientKey:             clientKey,
 		clientCa:              clientCa,
@@ -142,17 +146,30 @@ func (s *ServiceProvider) GenerativeService() (botServ.GenerativeModel, error) {
 	return s.generativeService, nil
 }
 
-// The Repository returns the repository for user state management.
-func (s *ServiceProvider) Repository() botServ.Repository {
-	s.repoOnce.Do(func() {
-		s.repository = repository.NewUsersStateMap(s.storagePath)
-		if err := s.repository.ReadFileToMemoryURL(); err != nil {
+// The ChatStateRepository returns the usersStateRepo for user state management.
+func (s *ServiceProvider) ChatStateRepository() botServ.UsersChatStateRepository {
+	s.stateRepoOnce.Do(func() {
+		s.usersStateRepo = repository.NewUsersStateMap(s.storagePath)
+		if err := s.usersStateRepo.ReadFileToMemoryURL(); err != nil {
 			logrus.Errorf("Failed to read user state from file: %v", err)
 		} else {
-			logrus.Info("Repository initialized and state loaded")
+			logrus.Info("AIDialogHistoryRepository initialized and state loaded")
 		}
 	})
-	return s.repository
+	return s.usersStateRepo
+}
+
+// The AiDialogHistoryRepository returns the aiDialogRepo for dialog with AI history management.
+func (s *ServiceProvider) AiDialogHistoryRepository() botServ.AIDialogHistoryRepository {
+	s.aiDialogRepoOnce.Do(func() {
+		s.aiDialogHistory = repository.NewAiDialogHistory(s.dialogStoragePath)
+		if err := s.aiDialogHistory.LoadDialogFromFile(); err != nil {
+			logrus.Errorf("Failed to read AI dialog history from file: %v", err)
+		} else {
+			logrus.Info("AIDialogHistoryRepository initialized and state loaded")
+		}
+	})
+	return s.aiDialogHistory
 }
 
 // Handler returns the HTTP handler for OAuth operations.
@@ -202,7 +219,7 @@ func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotSer
 		logrus.Errorf("Failed to get generative service: %v", err)
 		return nil, fmt.Errorf("bot service not initialized")
 	}
-	AuthURL := fmt.Sprintf("https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s/callback&state=", s.clientID, s.serverEndpoint)
+	AuthURL := fmt.Sprintf("https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s/callback&state=", s.clientID, s.serverEndpoint) //следует переделать эту реализацию
 
 	s.botServiceOnce.Do(func() {
 		s.botService = botServ.NewTgBot(
@@ -210,7 +227,8 @@ func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotSer
 			s.TranslateService(),
 			s.SmartHomeService(),
 			generativeService,
-			s.Repository(),
+			s.ChatStateRepository(),
+			s.AiDialogHistoryRepository(),
 			botAPI,
 			handler,
 			AuthURL,

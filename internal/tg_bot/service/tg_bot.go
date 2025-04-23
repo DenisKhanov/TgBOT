@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+// Константы для идентификаторов результатов
+const (
+	ActivityResultID  = "activity"
+	MovieResultID     = "movie"
+	TranslateResultID = "translate"
+)
+
 // Boring defines the interface for suggesting activities.
 type Boring interface {
 	WhatToDo() string
@@ -33,20 +40,31 @@ type SmartHome interface {
 
 type GenerativeModel interface {
 	GenerateTextMsg(text string) (string, error)
+	GenerateStreamTextMsg(text string, history []models.Message) <-chan string
 	ChangeGenerativeModelName(modelName string) error
 }
 
-// The Repository defines the interface for user state persistence.
-type Repository interface {
+// The UsersChatStateRepository defines the interface for user state persistence.
+type UsersChatStateRepository interface {
 	ReadFileToMemoryURL() error
 	SaveBatchToFile() error
-	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative, IsChangingGenModel bool)
+	StoreUserState(chatID int64, currentStep, lastUserMassage, callbackQueryData string, isTranslating, isGenerative, isChangingGenModel, isChangingHistorySize bool)
 	SaveUserSmartHomeInfo(chatID int64, token string, devices map[string]*models.Device)
 	GetUserSmartHomeToken(chatID int64) (string, error)
 	GetUserSmartHomeDevices(chatID int64) (map[string]*models.Device, error)
 	GetTranslateState(chatID int64) bool
 	GetGenerativeState(chatID int64) bool
 	GetChangeModelState(chatID int64) bool
+	GetChangeHistorySizeState(chatID int64) bool
+}
+
+type AIDialogHistoryRepository interface {
+	LoadDialogFromFile() error
+	SaveDialog(chatID int64, dialog []models.Message) error
+	SaveMsgToDialog(chatID int64, msg models.Message) error
+	GetDialogHistory(chatID int64) ([]models.Message, error)
+	ClearHistory(chatID int64) error
+	SaveBatchToFile() error
 }
 
 // Handler defines the interface for OAuth token handling.
@@ -56,19 +74,25 @@ type Handler interface {
 
 // TgBotServices is the main service struct for the Telegram bot, integrating all dependencies.
 type TgBotServices struct {
-	Boring         Boring    // Activity suggestion service.
-	Translate      Translate // Translation service.
-	SmartHome      SmartHome // Smart home service.
-	Generative     GenerativeModel
-	Repository     Repository            // User state repository.
-	ChatID         int64                 // Current chat ID.
-	Bot            *tgbotapi.BotAPI      // Telegram Bot API instance.
-	Handler        Handler               // OAuth handler.
-	OAuthURL       string                // URL for OAuth authentication.
-	OwnerID        int64                 // Owner's chatID for access to Yandex smart home menu button
-	debounceTimers map[int64]*time.Timer // Per-chat debounce timers
-	lastQueries    map[int64]string
-	mu             *sync.Mutex // Protects debounceTimers
+	Boring            Boring    // Activity suggestion service.
+	Translate         Translate // Translation service.
+	SmartHome         SmartHome // Smart home service.
+	Generative        GenerativeModel
+	StateRepo         UsersChatStateRepository  // User state repository.
+	AIDialogRepo      AIDialogHistoryRepository // User's & AI dialog history
+	dialogHistorySize int                       // Max count messages in dialog history for one user
+	ChatID            int64                     // Current chat ID.
+	Bot               *tgbotapi.BotAPI          // Telegram Bot API instance.
+	Handler           Handler                   // OAuth handler.
+	OAuthURL          string                    // URL for OAuth authentication.
+	OwnerID           int64                     // Owner's chatID for access to Yandex smart home menu button
+	debounceTimers    map[int64]*time.Timer     // Per-chat debounce timers
+	lastQueries       map[int64]string
+	pendingReplies    map[string]struct {
+		ChatID    int64
+		MessageID int
+	}
+	mu *sync.Mutex // Protects debounceTimers
 }
 
 // NewTgBot creates a new TgBotServices instance with the specified dependencies.
@@ -82,20 +106,25 @@ type TgBotServices struct {
 //   - URL: OAuth URL.
 //
 // Returns a pointer to a TgBotServices.
-func NewTgBot(boring Boring, translate Translate, smartHome SmartHome, generative GenerativeModel, repository Repository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
+func NewTgBot(boring Boring, translate Translate, smartHome SmartHome, generative GenerativeModel, stateRepository UsersChatStateRepository, aiDialogRepository AIDialogHistoryRepository, bot *tgbotapi.BotAPI, handler Handler, URL string, ownerID int64) *TgBotServices {
 	return &TgBotServices{
 		Boring:         boring,
 		Translate:      translate,
 		SmartHome:      smartHome,
 		Generative:     generative,
-		Repository:     repository,
+		StateRepo:      stateRepository,
+		AIDialogRepo:   aiDialogRepository,
 		Bot:            bot,
 		Handler:        handler,
 		OAuthURL:       URL,
 		OwnerID:        ownerID,
 		debounceTimers: make(map[int64]*time.Timer),
 		lastQueries:    make(map[int64]string),
-		mu:             &sync.Mutex{},
+		pendingReplies: make(map[string]struct {
+			ChatID    int64
+			MessageID int
+		}),
+		mu: &sync.Mutex{},
 	}
 }
 
@@ -185,7 +214,7 @@ func (b *TgBotServices) showBarMenu() error {
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_YANDEX_DDIALOGS),
 		),
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MODEL),
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_STREAM_GENERATIVE_MODEL),
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_GENERATIVE_MENU),
 		),
 	)
@@ -208,8 +237,6 @@ func (b *TgBotServices) showHeadMenu() error {
 	return b.sendMessage(b.ChatID, "Выберите способность:", 0, markup)
 }
 
-//TODO постоянно в inline режиме выдается одно сообщение с предложением чем заняться
-
 // HandleInlineQuery processes inline queries for translation or activity suggestions with debouncing.
 // Arguments:
 //   - bot: Telegram Bot API instance.
@@ -218,7 +245,6 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 	chatID := query.From.ID
 	currentInput := query.Query
 
-	// Потокобезопасно обновляем последний запрос и таймер
 	b.mu.Lock()
 	b.lastQueries[chatID] = currentInput
 
@@ -227,74 +253,100 @@ func (b *TgBotServices) HandleInlineQuery(bot *tgbotapi.BotAPI, query *tgbotapi.
 		timer.Stop()
 	}
 
-	// Запускаем новый таймер с debounce на 1.5 секунды
-	b.debounceTimers[chatID] = time.AfterFunc(1500*time.Millisecond, func() {
-		// После задержки проверяем, актуален ли запрос
-		b.mu.Lock()
-		lastQuery := b.lastQueries[chatID]
-		// Удаляем таймер после выполнения
-		delete(b.debounceTimers, chatID)
-		b.mu.Unlock()
-
-		// Если текст запроса изменился за время ожидания, игнорируем
-		if lastQuery != currentInput {
-			logrus.WithField("chatID", chatID).Info("Запрос устарел, пропускаем")
-			return
-		}
-
-		var results []interface{}
-
-		// Если есть ввод, показываем перевод
-		if currentInput != "" {
-			textMsg, err := b.Generative.GenerateTextMsg(currentInput)
-			if err != nil {
-				logrus.WithError(err).Error("Inline query generative text dialog failed")
-				return
-			}
-			result := tgbotapi.NewInlineQueryResultArticleMarkdown(
-				"1",
-				"Спросить у ИИ",
-				textMsg,
-			)
-			results = append(results, result)
-		} else {
-			// Если ввода нет, показываем два варианта
-			activity := b.Boring.WhatToDo()
-			activityResult := tgbotapi.NewInlineQueryResultArticleMarkdown(
-				"1",
-				"Предложи чем мне заняться",
-				activity,
-			)
-			results = append(results, activityResult)
-
-			movieResult := tgbotapi.NewInlineQueryResultArticle(
-				"2",
-				"Посоветуй подборку фильмов",
-				"Нажми, чтобы перейти к подборке фильмов",
-			)
-			movieResult.ReplyMarkup = &tgbotapi.InlineKeyboardMarkup{
-				InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
-					tgbotapi.NewInlineKeyboardRow(
-						tgbotapi.NewInlineKeyboardButtonURL("Перейти", "http://176.108.251.250:8444/"),
-					),
-				},
-			}
-			results = append(results, movieResult)
-		}
-
+	var results []interface{}
+	if currentInput == "" {
+		results = b.getDefaultInlineResults()
 		// Конфигурация ответа inline-запроса
 		inlineConf := tgbotapi.InlineConfig{
-			InlineQueryID: query.ID,
-			Results:       results,
-			CacheTime:     0,
-			IsPersonal:    true,
+			InlineQueryID:     query.ID,
+			Results:           results,
+			CacheTime:         0,
+			IsPersonal:        true,
+			SwitchPMText:      "Задать вопрос ИИ",
+			SwitchPMParameter: "ask_ai",
 		}
 
 		if _, err := bot.Request(inlineConf); err != nil {
 			logrus.WithError(err).Error("Failed to send inline query response")
 		}
-	})
+	} else {
+		b.debounceTimers[chatID] = time.AfterFunc(1500*time.Millisecond, func() {
+			results = b.handleTranslation(query.ID, chatID, currentInput)
+			inlineConf := tgbotapi.InlineConfig{
+				InlineQueryID: query.ID,
+				Results:       results,
+				CacheTime:     0,
+				IsPersonal:    true,
+			}
+
+			if _, err := bot.Request(inlineConf); err != nil {
+				logrus.WithError(err).Error("Failed to send inline query response")
+			}
+		})
+	}
 	b.mu.Unlock()
+}
+
+func (b *TgBotServices) getDefaultInlineResults() []interface{} {
+	var results []interface{}
+
+	// Если ввода нет, показываем два варианта
+	activity := b.Boring.WhatToDo()
+	activityResult := tgbotapi.NewInlineQueryResultArticleMarkdown(
+		ActivityResultID,
+		"Предложи чем мне заняться",
+		activity,
+	)
+	results = append(results, activityResult)
+
+	movieResult := tgbotapi.NewInlineQueryResultArticleMarkdown(
+		MovieResultID,
+		"Посоветуй подборку фильмов",
+		"Нажми, чтобы перейти к подборке фильмов",
+	)
+	movieResult.ReplyMarkup = &tgbotapi.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Перейти", "http://176.108.251.250:8444/"),
+			),
+		},
+	}
+	results = append(results, movieResult)
+	return results
+}
+
+func (b *TgBotServices) handleTranslation(queryID string, chatID int64, input string) []interface{} {
+	// Получаем блокировку для обновления состояния
+	b.mu.Lock()
+	lastQuery := b.lastQueries[chatID]
+	// Удаляем таймер после выполнения
+	delete(b.debounceTimers, chatID)
+	b.mu.Unlock()
+
+	var results []interface{}
+	// Если текст запроса изменился за время ожидания, игнорируем
+	if lastQuery != input {
+		logrus.WithField("chatID", chatID).Info("Запрос устарел, пропускаем")
+		return nil
+	}
+
+	// Выполняем перевод
+	translatedText, err := b.Translate.TranslateAPI(input)
+	if err != nil {
+		logrus.WithError(err).
+			WithField("input", input).
+			Error("Inline query translate text failed")
+		return nil
+	}
+
+	// Создаем результат с переводом
+	result := tgbotapi.NewInlineQueryResultArticleMarkdown(
+		TranslateResultID,
+		"Перевести введенный текст",
+		translatedText,
+	)
+	results = append(results, result)
+	return results
 }
 
 // SendActivityMsg sends a random activity suggestion to the current chat.
@@ -319,14 +371,17 @@ func (b *TgBotServices) SendMoviesLink() error {
 // Returns an error if the user is not the owner, authentication fails, or the message fails to send it.
 func (b *TgBotServices) showSmartMenu() error {
 	if b.ChatID != b.OwnerID {
+		if err := b.showBarMenu(); err != nil {
+			logrus.WithError(err).Error("Ошибка отображения основного меню:")
+		}
 		return b.sendMessage(b.ChatID, "Извини, но доступ к этому меню есть только у моего Хозяина.", 0, nil)
 	}
-	if _, err := b.Repository.GetUserSmartHomeToken(b.ChatID); err != nil {
+	if _, err := b.StateRepo.GetUserSmartHomeToken(b.ChatID); err != nil {
 		if err = b.getSmartHomeToken(b.ChatID); err != nil {
 			return b.showOAuthButton()
 		}
 	}
-	devices, err := b.Repository.GetUserSmartHomeDevices(b.ChatID)
+	devices, err := b.StateRepo.GetUserSmartHomeDevices(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Не удалось загрузить устройства", 0, nil)
 	}
@@ -383,14 +438,14 @@ func (b *TgBotServices) getSmartHomeToken(chatID int64) error {
 		return fmt.Errorf("failed to get home info: %w", err)
 	}
 
-	b.Repository.SaveUserSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
+	b.StateRepo.SaveUserSmartHomeInfo(b.ChatID, tokenData.AccessToken, userDevices)
 	return b.sendMessage(b.ChatID, "Авторизация прошла успешно", 0, nil)
 }
 
 // showSmartHomeInfo sends information about the user's Smart Home devices.
 // Returns an error if token retrieval, device info fetching, or message sending fails.
 func (b *TgBotServices) showSmartHomeInfo() error {
-	token, err := b.Repository.GetUserSmartHomeToken(b.ChatID)
+	token, err := b.StateRepo.GetUserSmartHomeToken(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
 	}
@@ -417,12 +472,12 @@ func (b *TgBotServices) showSmartHomeInfo() error {
 //
 // Returns an error if token retrieval, device lookup, state change, or message sending fails.
 func (b *TgBotServices) setDeviceTurnOnOffStatus(deviceName string) error {
-	token, err := b.Repository.GetUserSmartHomeToken(b.ChatID)
+	token, err := b.StateRepo.GetUserSmartHomeToken(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, похоже вы не прошли авторизацию", 0, nil)
 	}
 
-	devices, err := b.Repository.GetUserSmartHomeDevices(b.ChatID)
+	devices, err := b.StateRepo.GetUserSmartHomeDevices(b.ChatID)
 	if err != nil {
 		return b.sendMessage(b.ChatID, "Произошла ошибка, устройства не найдены", 0, nil)
 	}
@@ -462,6 +517,9 @@ func (b *TgBotServices) translateText(update *tgbotapi.Update) error {
 // Returns an error if the user is not the owner, authentication fails, or the message fails to send it.
 func (b *TgBotServices) showGenerativeMenu() error {
 	if b.ChatID != b.OwnerID {
+		if err := b.showBarMenu(); err != nil {
+			logrus.WithError(err).Error("Ошибка отображения основного меню:")
+		}
 		return b.sendMessage(b.ChatID, "Извини, но доступ к этому меню есть только у моего Хозяина.", 0, nil)
 	}
 
@@ -469,6 +527,7 @@ func (b *TgBotServices) showGenerativeMenu() error {
 		tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_CHANGE_MODEL),
 			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_PRINT_MENU),
+			tgbotapi.NewKeyboardButton(constant.BUTTON_TEXT_CHANGE_HISTORY_SIZE),
 		),
 	}
 	markup := tgbotapi.NewReplyKeyboard(rows...)
@@ -478,27 +537,158 @@ func (b *TgBotServices) showGenerativeMenu() error {
 	return b.sendMessage(b.ChatID, "Выберите пункт ↓", 0, markup)
 }
 
-// translateText translates the text from the provided update and sends it as a reply.
-// Arguments:
-//   - update: the Telegram update containing the text to translate.
+// changeHistorySize updates the maximum size limit for the dialog history based on user input.
 //
-// Returns an error if translation or message sending fails.
-func (b *TgBotServices) generativeText(update *tgbotapi.Update) error {
-	b.sendMessage(b.ChatID, "Я обрабатываю ваш запрос...", update.Message.MessageID, nil)
-	aiResponse, err := b.Generative.GenerateTextMsg(update.Message.Text)
-	if err != nil {
-		logrus.WithError(err).Error("Request to generative model failed")
-		b.sendMessage(b.ChatID, "На данный момент ИИ не доступен((", update.Message.MessageID, nil)
-		return err
+// It extracts the new size from the user's message text and attempts to parse it as an integer.
+// The new size must be between 1 and 200 (inclusive). If the input is invalid (e.g., not an integer
+// or outside the allowed range), it sends an error message to the user. On success, it updates the
+// dialog history size limit and sends a confirmation message to the user.
+//
+// Parameters:
+//   - update: A pointer to tgbotapi.Update containing the user's message with the new history size.
+//
+// Returns:
+//   - error: An error if sending the response message fails; nil otherwise.
+func (b *TgBotServices) changeHistorySize(update *tgbotapi.Update) error {
+	msg := update.Message.Text
+	if msg == "" {
+		return b.sendMessage(b.ChatID, "Нужно ввести целое число! Например: 50", update.Message.MessageID, nil)
 	}
-	return b.sendMessage(b.ChatID, aiResponse, update.Message.MessageID, nil)
+	newSize, err := strconv.Atoi(msg)
+	if err != nil {
+		logrus.WithError(err).Error("Ошибка преобразования: ")
+		return b.sendMessage(b.ChatID, "Нужно ввести именно целое число от 1 до 200! Например: 50", update.Message.MessageID, nil)
+	}
+	if newSize < 1 || newSize > 200 {
+		return b.sendMessage(b.ChatID, "Нужно ввести именно целое число от 1 до 200! Например: 50", update.Message.MessageID, nil)
+	}
+	b.dialogHistorySize = newSize
+	nesMsg := fmt.Sprintf("Теперь размер памяти истории диалога с ИИ = %d", b.dialogHistorySize)
+	return b.sendMessage(b.ChatID, nesMsg, update.Message.MessageID, nil)
+
 }
 
-// changeGenerativeModel
+// checkSizeDialogHistory checks if the dialog history exceeds the allowed size limit.
+//
+// It compares the length of the provided history with the configured dialog history size limit
+// stored in b.dialogHistorySize. This method is typically used to determine whether the history
+// should be cleared to prevent excessive memory usage or to stay within token limits for the
+// generative model.
+//
+// Parameters:
+//   - history: A slice of models.Message representing the current dialog history.
+//
+// Returns:
+//   - bool: True if the history size exceeds the limit; false otherwise.
+func (b *TgBotServices) checkSizeDialogHistory(history []models.Message) bool {
+	return len(history) > b.dialogHistorySize
+}
+
+// generativeTextWithStream generates a streaming text response from the AI model based on the user's input.
+//
+// This method sends an initial message to the user indicating that the request is being processed,
+// retrieves the dialog history, and checks if the history exceeds the size limit. If the limit is exceeded,
+// it clears the history and notifies the user. The user's message is then saved to the dialog history,
+// and the generative model is invoked to produce a streaming response. The response is sent to the user
+// in chunks, updating the initial message every 500 milliseconds. Once the streaming is complete,
+// the final response is saved to the dialog history.
+//
+// Parameters:
+//   - update: A pointer to tgbotapi.Update containing the user's message to process.
+//
+// Returns:
+//   - error: An error if sending messages, saving to the dialog history, or retrieving the history fails;
+//     nil otherwise. Note that errors during streaming are logged but do not interrupt the process.
+func (b *TgBotServices) generativeTextWithStream(update *tgbotapi.Update) error {
+	msg := tgbotapi.NewMessage(b.ChatID, "Я обрабатываю ваш запрос...")
+	lastMsg, err := b.Bot.Send(msg)
+	if err != nil {
+		logrus.WithError(err).Error("Ошибка отправки сообщения")
+	}
+	history, err := b.AIDialogRepo.GetDialogHistory(b.ChatID)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to load dialog history")
+		// Продолжаем без истории, чтобы не прерывать работу
+		history = []models.Message{}
+	}
+	if b.checkSizeDialogHistory(history) {
+		if err = b.AIDialogRepo.ClearHistory(b.ChatID); err != nil {
+			logrus.WithError(err).Error("Failed to clear dialog history")
+		}
+		msg = tgbotapi.NewMessage(b.ChatID, "Размер истории переписки с ИИ превышен и был очищен. Создан новый чат")
+		_, err = b.Bot.Send(msg)
+		if err != nil {
+			logrus.WithError(err).Error("Ошибка отправки сообщения")
+		}
+	}
+	// Добавляем текущее сообщение пользователя в историю
+	userMsg := models.Message{
+		Role:    "user",
+		Content: update.Message.Text,
+	}
+	if err = b.AIDialogRepo.SaveMsgToDialog(b.ChatID, userMsg); err != nil {
+		logrus.WithError(err).Error("Failed to save user message to dialog")
+	}
+	responseChan := b.Generative.GenerateStreamTextMsg(update.Message.Text, history)
+
+	// Обрабатываем поток и обновляем сообщение
+	var fullResponse strings.Builder
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case chunk, ok := <-responseChan:
+			if !ok {
+				if fullResponse.Len() > 0 {
+					finalMsg := tgbotapi.NewEditMessageText(b.ChatID, lastMsg.MessageID, fullResponse.String())
+					if _, err = b.Bot.Send(finalMsg); err != nil {
+						logrus.WithError(err).Error("Failed to send final message")
+					}
+				}
+				if len(lastMsg.Text) > 0 {
+					aiResponse := models.Message{
+						Role:    "assistant",
+						Content: fullResponse.String(),
+					}
+					if err = b.AIDialogRepo.SaveMsgToDialog(b.ChatID, aiResponse); err != nil {
+						logrus.WithError(err).Error("Failed to save AI response to dialog")
+					}
+				}
+
+				return err
+			}
+			fullResponse.WriteString(chunk)
+
+		case <-ticker.C:
+			if fullResponse.Len() > 0 {
+				editedMsg := tgbotapi.NewEditMessageText(b.ChatID, lastMsg.MessageID, fullResponse.String())
+				if _, err = b.Bot.Send(editedMsg); err != nil {
+					logrus.WithError(err).Error("Failed to edit message")
+				}
+			}
+		}
+	}
+
+}
+
+// changeGenerativeModel updates the generative model used by the bot based on the user's input.
+//
+// It attempts to change the generative model by calling ChangeGenerativeModelName with the text
+// provided in the update.Message.Text. If the model change fails (e.g., due to an invalid model name
+// or lack of access), it logs the error and sends a failure message to the user. On success, it sends
+// a confirmation message to the user.
+//
+// Parameters:
+//   - update: A pointer to tgbotapi.Update containing the user's message with the new model name.
+//
+// Returns:
+//   - error: An error if the model change fails or if sending the response message fails; nil otherwise.
 func (b *TgBotServices) changeGenerativeModel(update *tgbotapi.Update) error {
 	if err := b.Generative.ChangeGenerativeModelName(update.Message.Text); err != nil {
 		logrus.WithError(err).Error("Change generative model failed")
-		b.sendMessage(b.ChatID, "На данный момент сменить генеративную модель не удалось. Попробуй проверить правильно ли ты указал название модели или есть ли к ней доступ у твоего аккаунта!", update.Message.MessageID, nil)
+		b.sendMessage(b.ChatID, "На данный момент сменить генеративную модель не удалось. "+
+			"Попробуй проверить правильно ли ты указал название модели или есть ли к ней доступ у твоего аккаунта!", update.Message.MessageID, nil)
 		return err
 	}
 
@@ -523,7 +713,6 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 			errOne = b.showBarMenu()
 		case text == constant.BUTTON_TEXT_PRINT_MENU:
 			errOne = b.showBarMenu()
-			//TODO исправить проблему выдачи одинаковых ответов в inline режиме
 		case text == constant.BUTTON_TEXT_WHAT_TO_DO:
 			errOne = b.SendActivityMsg()
 			errTwo = b.showBarMenu()
@@ -539,37 +728,43 @@ func (b *TgBotServices) UpdateProcessing(update *tgbotapi.Update) {
 			errTwo = b.showSmartMenu()
 		case text == constant.BUTTON_TEXT_GENERATIVE_MENU:
 			errOne = b.showGenerativeMenu()
+		case text == constant.BUTTON_TEXT_CHANGE_HISTORY_SIZE:
+			b.StateRepo.StoreUserState(b.ChatID, "смена памяти ИИ", "", choiceCode, false, false, false, true) // Устанавливаем состояние смены размера памяти ИИ в true
+			errOne = b.sendMessage(b.ChatID, "Ты в режиме смены размера памяти генеративной модели.\nВведи целое число от 1 до 200 или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_CHANGE_MODEL:
-			b.Repository.StoreUserState(b.ChatID, "смена ИИ", "", choiceCode, false, false, true) // Устанавливаем состояние перевода в true
-			errOne = b.sendMessage(b.ChatID, "Вы в режиме смены генеративной модели.\nВведи название генеративной модели с сайта https://openrouter.ai/models. Например: deepseek/deepseek-chat-v3-0324:free или /stop для выхода.", 0, nil)
-		case text == constant.BUTTON_TEXT_GENERATIVE_MODEL:
-			b.Repository.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true, false) // Устанавливаем состояние перевода в true
+			b.StateRepo.StoreUserState(b.ChatID, "смена ИИ", "", choiceCode, false, false, true, false) // Устанавливаем состояние смены генеративной модели в true
+			errOne = b.sendMessage(b.ChatID, "Ты в режиме смены генеративной модели.\nВведи название генеративной модели с сайта https://openrouter.ai/models. Например: deepseek/deepseek-chat-v3-0324:free или /stop для выхода.", 0, nil)
+		case text == constant.BUTTON_TEXT_STREAM_GENERATIVE_MODEL:
+			b.StateRepo.StoreUserState(b.ChatID, "ИИ", "", choiceCode, false, true, false, false) // Устанавливаем состояние режима общения с ИИ в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме общения с ИИ.\nВведите свой вопрос или /stop для выхода.", 0, nil)
 		case text == constant.BUTTON_TEXT_TRANSLATE:
-			b.Repository.StoreUserState(b.ChatID, "перевод", "", choiceCode, true, false, false) // Устанавливаем состояние перевода в true
+			b.StateRepo.StoreUserState(b.ChatID, "перевод", "", choiceCode, true, false, false, false) // Устанавливаем состояние перевода в true
 			errOne = b.sendMessage(b.ChatID, "Вы в режиме перевода.\nВведите текст для перевода или /stop для выхода.", 0, nil)
 		case text == "/start":
 			logrus.Infof("Message [%s] from %s (chat %d)", update.Message.Text, update.Message.From.UserName, b.ChatID)
-			b.Repository.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false, false, false)
+			b.StateRepo.StoreUserState(b.ChatID, "старт", update.Message.Text, "", false, false, false, false)
 			errOne = b.askToPrintIntro()
 		case text == "/stop":
-			b.Repository.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false, false, false)
+			b.StateRepo.StoreUserState(b.ChatID, "стоп", update.Message.Text, "", false, false, false, false)
 			errOne = b.sendMessage(b.ChatID, "Возврат в основное меню", 0, nil)
 			errTwo = b.showBarMenu()
-		case b.Repository.GetChangeModelState(b.ChatID):
+		case b.StateRepo.GetChangeHistorySizeState(b.ChatID):
+			errOne = b.changeHistorySize(update)
+			errTwo = b.showBarMenu()
+		case b.StateRepo.GetChangeModelState(b.ChatID):
 			errOne = b.changeGenerativeModel(update)
 			errTwo = b.showBarMenu()
-		case b.Repository.GetTranslateState(b.ChatID):
+		case b.StateRepo.GetTranslateState(b.ChatID):
 			errOne = b.translateText(update)
-		case b.Repository.GetGenerativeState(b.ChatID):
-			errOne = b.generativeText(update)
+		case b.StateRepo.GetGenerativeState(b.ChatID):
+			errOne = b.generativeTextWithStream(update)
 		case text == "Включить: "+strings.TrimPrefix(text, "Включить: "), text == "Выключить: "+strings.TrimPrefix(text, "Выключить: "): // Dynamic device buttons
 			deviceName := strings.Fields(text)[1]
 			fmt.Println(deviceName)
 			errOne = b.setDeviceTurnOnOffStatus(deviceName)
 			errTwo = b.showSmartMenu()
 		default:
-			b.Repository.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false, false, false)
+			b.StateRepo.StoreUserState(b.ChatID, "i can't do it now", update.Message.Text, "", false, false, false, false)
 			errOne = b.sendSorryMsg(update)
 		}
 		if errOne != nil || errTwo != nil {

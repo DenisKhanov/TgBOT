@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/go-deepseek/deepseek"
 	"github.com/go-deepseek/deepseek/request"
 	"github.com/sirupsen/logrus"
@@ -39,6 +40,12 @@ func NewDeepSeekAPI(apiKey string, modelName string, maxTokens int, temperature 
 		maxTokens:   maxTokens,
 		temperature: temperature,
 	}, nil
+}
+
+func (d *DeepSeekAPI) GenerateStreamTextMsg(text string, history []models.Message) <-chan string {
+	_, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return make(<-chan string)
 }
 
 // GenerateTextMsg генерирует текст на основе переданного запроса

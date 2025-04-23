@@ -21,18 +21,20 @@ const (
 	//EMOJI_BUTTON_END                     = "  \U000025C0"         // ◀
 	//EMOJI_BUTTON_UP                      = "\U0001F199"           //🆙
 
-	BUTTON_TEXT_PRINT_INTRO           = "Расскажи о себе"
-	BUTTON_TEXT_SKIP_INTRO            = "Пропусти вступление"
-	BUTTON_TEXT_WHAT_TO_DO            = "Чем мне заняться?"
-	BUTTON_TEXT_WHITCH_MOVIE_TO_WATCH = "Какой фильм посмотреть?"
-	BUTTON_TEXT_TRANSLATE             = "Переведи текст"
-	BUTTON_TEXT_YANDEX_DDIALOGS       = "Меню Yandex диалогов"
-	BUTTON_TEXT_YANDEX_SEND_CODE      = "Пройти аутентификацию"
-	BUTTON_TEXT_YANDEX_GET_HOME_INFO  = "Показать информацию SmartHome"
-	BUTTON_TEXT_YANDEX_LOGIN          = "Аутентифицироваться"
-	BUTTON_TEXT_GENERATIVE_MODEL      = "Режим ИИ"
-	BUTTON_TEXT_CHANGE_MODEL          = "Сменить модель ИИ"
-	BUTTON_TEXT_GENERATIVE_MENU       = "Покажи меню ИИ"
+	BUTTON_TEXT_PRINT_INTRO             = "Расскажи о себе"
+	BUTTON_TEXT_SKIP_INTRO              = "Пропусти вступление"
+	BUTTON_TEXT_WHAT_TO_DO              = "Чем мне заняться?"
+	BUTTON_TEXT_WHITCH_MOVIE_TO_WATCH   = "Какой фильм посмотреть?"
+	BUTTON_TEXT_TRANSLATE               = "Переведи текст"
+	BUTTON_TEXT_YANDEX_DDIALOGS         = "Меню Yandex диалогов"
+	BUTTON_TEXT_YANDEX_SEND_CODE        = "Пройти аутентификацию"
+	BUTTON_TEXT_YANDEX_GET_HOME_INFO    = "Показать информацию SmartHome"
+	BUTTON_TEXT_YANDEX_LOGIN            = "Аутентифицироваться"
+	BUTTON_TEXT_GENERATIVE_MODEL        = "Режим ИИ"
+	BUTTON_TEXT_STREAM_GENERATIVE_MODEL = "/start ask_ai"
+	BUTTON_TEXT_CHANGE_MODEL            = "Сменить модель ИИ"
+	BUTTON_TEXT_CHANGE_HISTORY_SIZE     = "Сменить размер памяти"
+	BUTTON_TEXT_GENERATIVE_MENU         = "Покажи меню ИИ"
 
 	BUTTON_TEXT_PRINT_MENU = "Покажи главное меню"
 
