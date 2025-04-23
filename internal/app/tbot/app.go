@@ -78,6 +78,7 @@ func (a *App) initServiceProvider(_ context.Context) error {
 		a.config.EnvGenerativeApiKey,
 		a.config.EnvGenerativeModel,
 		a.config.EnvStoragePath,
+		a.config.EnvDialogStoragePath,
 		a.config.EnvClientCert,
 		a.config.EnvClientKey,
 		a.config.EnvClientCa,
@@ -140,18 +141,25 @@ func (a *App) runTelegramBot() {
 		case sig := <-signalChan:
 			logrus.Infof("Received signal %v, initiating shutdown", sig)
 			cancel()
-			if err = myBot.Repository.SaveBatchToFile(); err != nil {
+			if err = myBot.StateRepo.SaveBatchToFile(); err != nil {
 				logrus.Errorf("Failed to save state during shutdown: %v", err)
+			}
+			if err = myBot.AIDialogRepo.SaveBatchToFile(); err != nil {
+				logrus.Errorf("Failed to save dialog history during shutdown: %v", err)
 			}
 			botAPI.StopReceivingUpdates()
 			logrus.Info("Telegram bot shut down successfully")
 			return
 
 		case <-ticker.C:
-			if err = myBot.Repository.SaveBatchToFile(); err != nil {
+			if err = myBot.StateRepo.SaveBatchToFile(); err != nil {
 				logrus.Errorf("Failed to save state on ticker: %v", err)
-			} else {
-				logrus.Info("User state saved successfully")
+			}
+			if err = myBot.AIDialogRepo.SaveBatchToFile(); err != nil {
+				logrus.Errorf("Failed to save dialog history on ticker: %v", err)
+			}
+			if err == nil {
+				logrus.Info("User state & AI dialog history saved successfully")
 			}
 		case <-ctx.Done():
 			logrus.Info("Main loop terminated")

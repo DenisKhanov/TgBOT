@@ -13,7 +13,8 @@ import (
 type Config struct {
 	EnvLogsLevel                   string // Log level for the application (e.g., DEBUG, INFO)
 	EnvLogFileName                 string // File's name for log (e.g., Bot.log)
-	EnvStoragePath                 string // File's name for log (e.g., VPNServer.log)
+	EnvStoragePath                 string // File's name for storage user chat state (e.g., ./keep_chat.json)
+	EnvDialogStoragePath           string // File's path for storage user/AI dialog history (e.g., ./dialog_ai.json)
 	EnvBotToken                    string // Telegram Bot Token for authentication with the Telegram API
 	EnvTranslateApiEndpoint        string // Endpoint URL for the translation API (e.g., Yandex Translate API)
 	EnvDictionaryDetectApiEndpoint string // Endpoint URL for the dictionary/detect language API (e.g., for language detection)
@@ -44,6 +45,7 @@ func NewConfig() (*Config, error) {
 	config.EnvLogsLevel = os.Getenv("LOG_LEVEL")
 	config.EnvLogFileName = os.Getenv("LOG_FILE_NAME")
 	config.EnvStoragePath = os.Getenv("FILE_STORAGE_PATH")
+	config.EnvDialogStoragePath = os.Getenv("FILE_DIALOG_HISTORY_PATH")
 	config.EnvBotToken = os.Getenv("TOKEN_BOT")
 	config.EnvTranslateApiEndpoint = os.Getenv("TRANSLATE_API_ENDPOINT")
 	config.EnvDictionaryDetectApiEndpoint = os.Getenv("DICTIONARY_DETECT_API_ENDPOINT")

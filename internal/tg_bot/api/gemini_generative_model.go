@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
@@ -53,7 +55,13 @@ func NewGeminiAPI(apiKey string, modelName string, maxTokens int, temperature fl
 	}, nil
 }
 
-func (g GeminiAPI) GenerateTextMsg(text string) (string, error) {
+func (g *GeminiAPI) GenerateStreamTextMsg(text string, history []models.Message) <-chan string {
+	_, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return make(<-chan string)
+}
+
+func (g *GeminiAPI) GenerateTextMsg(text string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -63,8 +71,16 @@ func (g GeminiAPI) GenerateTextMsg(text string) (string, error) {
 		logrus.WithError(err).Error("Error creating Gemini request")
 		return "", err
 	}
-	if text, ok := resp.Candidates[0].Content.Parts[0].(genai.Text); ok {
-		return string(text), nil
+	if respText, ok := resp.Candidates[0].Content.Parts[0].(genai.Text); ok {
+		return string(respText), nil
 	}
 	return "", err
+}
+
+func (g *GeminiAPI) ChangeGenerativeModelName(modelName string) error {
+	if modelName == "" {
+		return errors.New("model name can't be empty")
+	}
+	g.model = g.client.GenerativeModel(modelName)
+	return nil
 }
