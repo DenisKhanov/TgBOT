@@ -1,0 +1,32 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    container_name: tgbot2-server
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./server.env:/app/server.env:ro
+      - ./success.html:/app/success.html:ro
+      - ./pkg/tls_config/cert:/app/pkg/tls_config/cert:ro
+      - ./server_tokens.json:/app/server_tokens.json
+      - ./Server.log:/app/Server.log
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bot
+    container_name: tgbot2-bot
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    volumes:
+      - ./bot.env:/app/bot.env:ro
+      - ./pkg/tls_config/cert:/app/pkg/tls_config/cert:ro
+      - ./keep_chat.json:/app/keep_chat.json
+      - ./dialog_ai.json:/app/dialog_ai.json
+      - ./Bot.log:/app/Bot.log
