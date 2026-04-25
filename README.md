@@ -1,139 +1,125 @@
-# TgBOT - Многофункциональный Telegram бот
+# TgBOT
 
 ![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)
-![Go](https://img.shields.io/badge/Go-1.16+-00ADD8?logo=go)
+![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)
 
-*Read this in [English](#tgbot---multifunctional-telegram-bot)*
+*Read this in [English](#english)*
 
-## 📝 Описание
+## Русский
 
-TgBOT - это многофункциональный Telegram бот, написанный на языке Go, который предоставляет пользователям различные
-возможности:
+### Что это
 
-- 🏠 **Управление умным домом** - интеграция с Яндекс Умным домом для управления устройствами
-- 🌐 **Перевод текста** - перевод сообщений с использованием Яндекс API
-- 🎯 **Рекомендации по активностям** - предложения, чем заняться, когда скучно
-- 📽 **Показать ссылку на подборку отличных фильмов** - ссылка на мой сайт со списком фильмов по категориям.
-- 🧠 **Режим ИИ** - взаимодействие с генеративной моделью.
+`TgBOT` - это проект из двух Go-приложений:
 
-Бот использует современную архитектуру с применением паттерна Dependency Injection для управления зависимостями и
-чистого кода для лучшей поддержки и расширяемости.
+- `cmd/tgbot` - Telegram-бот
+- `cmd/server` - локальный HTTPS OAuth-сервер для авторизации в Яндекс Умном доме
 
-P.s.- этот проект был написан мной для личного удобства использования моих умных устройств и может быть не сильно
-универсален.
+Бот умеет:
 
-## 🚀 Возможности
+- управлять устройствами Яндекс Умного дома
+- переводить текст через Yandex Translate API
+- отвечать через generative providers: `gemini`, `deepseek`, `openrouter`
+- показывать ссылку на внешний каталог фильмов
+- хранить состояние пользователей и историю AI-диалогов в JSON
 
-- **Интеграция с Яндекс Умным домом**
-    - Авторизация через OAuth
-    - Получение списка устройств
-    - Управление устройствами (включение/выключение)
+Сервер и бот общаются по mutual TLS. Сертификаты лежат в `pkg/tls_config/cert/`.
 
-- **Перевод текста**
-    - Автоматическое определение языка
-    - Перевод текста с использованием Яндекс API
+### Требования
 
-- **Рекомендации по активностям**
-    - Предложения интересных занятий
-    - Разнообразные категории активностей
+- Go `1.25+` для локальной сборки
+- `make`
+- Docker и Docker Compose, если нужен контейнерный запуск
+- Telegram bot token
+- Yandex OAuth client id / secret
+- Yandex Translate API key
+- generative provider API key
 
-- **Взаимодействие с генеративными моделями**
-    - Можно задать вопрос AI
+### Быстрый старт
 
-## 🛠️ Технологии
+```bash
+git clone https://github.com/DenisKhanov/TgBOT.git
+cd TgBOT
+cp bot.env.example bot.env
+cp server.env.example server.env
+```
 
-- **Go** - основной язык программирования
-- **Telegram Bot API** - для взаимодействия с Telegram
-- **Яндекс API** - для перевода и управления умным домом
-- **TLS** - для защиты соединений
-- **Logrus** - для логирования
+После этого заполни реальные значения в `bot.env` и `server.env`.
 
-## 📋 Требования
+`san.cnf` руками править не нужно. `make gen-certs`, `make run` и `make deploy-container`
+автоматически создают `pkg/tls_config/cert/server/san.cnf` из
+`pkg/tls_config/cert/server/san.cnf.example` и синхронизируют `CN` / `SAN` с
+`SERVER_ENDPOINT` и `HTTPS_SERVER`.
 
-- Go 1.16 или выше
-- Доступ к интернету
-- Токен Telegram бота
-- Токены Яндекс API (для перевода и умного дома)
+### Конфигурация
 
-## 📥 Установка
+Основные переменные в `bot.env`:
 
-1. Клонируйте репозиторий:
-   ```bash
-   git clone https://github.com/DenisKhanov/TgBOT.git
-   cd TgBOT
-   ```
+- `TOKEN_BOT` - токен Telegram-бота
+- `SERVER_ENDPOINT` - HTTPS endpoint OAuth-сервера, например `https://example.com:9443`
+- `CLIENT_ID` - Yandex OAuth client id
+- `OWNER_ID` - Telegram user id владельца
+- `TRANSLATE_API_KEY` - ключ Yandex Translate
+- `GENERATIVE_NAME` - `gemini`, `deepseek` или `openrouter`
+- `GENERATIVE_API_KEY` - API key выбранного провайдера
+- `GENERATIVE_MODEL` - имя модели провайдера
+- `MOVIES_URL` - внешняя ссылка на каталог фильмов
+- `CLIENT_CERT_FILE`, `CLIENT_KEY_FILE`, `CLIENT_CA_FILE` - пути к mTLS сертификатам
+- `API_KEY` - общий ключ для запросов к локальному серверу
 
-2. Подготовьте конфигурацию:
-   ```bash
-   cp bot.env.example bot.env
-   cp server.env.example server.env
-   ```
-   После этого заполните реальные значения в `bot.env` и `server.env`.
+Основные переменные в `server.env`:
 
-3. `san.cnf` вручную редактировать не нужно.
-   `make gen-certs`, `make run` и `make deploy-container` автоматически создают
-   `pkg/tls_config/cert/server/san.cnf` из `pkg/tls_config/cert/server/san.cnf.example`
-   и подставляют host из `SERVER_ENDPOINT` и `HTTPS_SERVER`.
+- `HTTPS_SERVER` - адрес HTTPS-сервера, обычно `0.0.0.0:9443`
+- `OAUTH_ENDPOINT` - endpoint обмена OAuth code на token
+- `CLIENT_ID`, `CLIENT_SECRET` - данные Yandex OAuth приложения
+- `SERVER_CERT_FILE`, `SERVER_KEY_FILE`, `SERVER_CA_FILE` - TLS-файлы сервера
+- `API_KEY` - общий ключ, который использует бот
 
-## ⚙️ Конфигурация
+Готовые шаблоны:
 
-Перед запуском необходимо настроить конфигурацию:
+- `bot.env.example`
+- `server.env.example`
 
-1. Возьмите за основу `server.env.example` и настройте `server.env`:
-   ```
-   LOG_LEVEL=info (уровень_логирования)
-   LOG_FILE_NAME=Server.log (имя_файла_для_сохранения_логов)
-   OAUTH_ENDPOINT=https://oauth.yandex.ru/token (путь_для_получения_токена_умного_дома)
-   HTTPS_SERVER=localhost:8080 (адрес_на_котором_запускается_сервер)
-   SERVER_CERT_FILE=/pkg/tls_config/cert/server/server.crt (путь_TLS_к_ключам_и_сертификатам)
-   SERVER_KEY_FILE=/pkg/tls_config/cert/server/server.key (путь_TLS_к_ключам_и_сертификатам)
-   SERVER_CA_FILE=/pkg/tls_config/cert/server/ca.crt (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_ID=_______________________ (ID_внешнего_приложения_умного_дома https://oauth.yandex.ru/client) 
-   CLIENT_SECRET=________________________ (secret_внешнего_приложения_умного_дома https://oauth.yandex.ru/client) 
-   API_KEY=__________________________ (ключ_для_упрощенной_блокировки_несанкционированного_доступа_к_серверу)
-   ```
-
-2. Возьмите за основу `bot.env.example` и настройте `bot.env`:
-   ```
-   LOG_LEVEL=info (уровень_логирования)
-   LOG_FILE_NAME=Bot.log (имя_файла_для_сохранения_логов)
-   FILE_STORAGE_PATH=./keep_chat.json (файл_куда_сохраняется_история_состояния_чата)
-   FILE_DIALOG_HISTORY_PATH=./dialog_ai.json (файл_куда_сохраняется_история_переписки_с_ИИ)
-   TOKEN_BOT=________:_____________________ (токен_ТГ_бота)
-   TRANSLATE_API_ENDPOINT=____________________________ (ендпоинт для доступа к api переводчика. Например: https://translate.api.cloud.yandex.net/translate/v2/translate) 
-   DICTIONARY_DETECT_API_ENDPOINT=____________________________ (ендпоинт для доступа к api определителя языка текста. Например: https://translate.api.cloud.yandex.net/translate/v2/detect) 
-   SMART_HOME_ENDPOINT=____________________________ (ендпоинт для доступа к api умного дома. Например: https://api.iot.yandex.net) 
-   TRANSLATE_API_KEY=Api-Key ____________________________ (ключ_api_яндекс_переводчика)
-   GENERATIVE_NAME= ___________________ (название генеративной API. Выбор из (gemini,deepseek или openrouter))
-   GENERATIVE_MODEL= ___________________ (название конкретной генеративной модели. Например: meta-llama/llama-3-8b-instruct:free)
-   GEMINI_API_KEY=Api-Key ____________________________ (ключ_api_Gemini_генерации)
-   SERVER_ENDPOINT="https://localhost:8080" (эндпоинт_для_запроса_токена_умного_дома_у_сервера)
-   CLIENT_ID=_______________________ (ID_внешнего_приложения_умного_дома https://oauth.yandex.ru/client)
-   OWNER_ID=_______________________ (ID_владельца_бота_для_доступа_к_умному_дому)
-   CLIENT_CERT_FILE=/pkg/tls_config/cert/client/client.crt (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_KEY_FILE=/pkg/tls_config/cert/client/client.key (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_CA_FILE=/pkg/tls_config/cert/server/ca.crt (путь_TLS_к_ключам_и_сертификатам)
-   API_KEY=___________________________ (ключ_для_упрощенной_блокировки_несанкционированного_доступа_к_серверу)
-   ```
-
-## 🚀 Запуск
-
-### Обычный запуск
+### Команды Makefile
 
 ```bash
 make help
-make run
+```
+
+Основные команды:
+
+- `make build` - собрать оба бинаря
+- `make build-server` - собрать только OAuth-сервер
+- `make build-bot` - собрать только Telegram-бота
+- `make gen-certs` - сгенерировать TLS-сертификаты
+- `make run` - сгенерировать сертификаты, собрать и запустить оба процесса
+- `make run-server` - сгенерировать сертификаты, собрать и запустить только сервер
+- `make run-bot` - собрать и запустить только бота
+- `make stop` - остановить оба процесса
+- `make deploy-container` - собрать и поднять проект в контейнерах
+- `make logs-container` - смотреть логи контейнеров
+- `make stop-container` - остановить контейнеры
+- `make start-systemd` - старт через systemd
+- `make stop-systemd` - остановка systemd-сервисов
+- `make restart-systemd` - рестарт systemd-сервисов
+
+### Локальный запуск
+
+```bash
+make gen-certs
 make run-server
 make run-bot
 ```
 
-### Запуск через systemd
+Если нужен единый запуск одной командой:
 
 ```bash
-make start-systemd
+make run
 ```
 
-### Запуск в контейнерах
+Замечание: `make run` после старта удаляет `bot.env` и `server.env`. Для VPS и долгоживущего
+запуска обычно удобнее `make run-server` / `make run-bot` или контейнеры.
+
+### Контейнерный запуск
 
 ```bash
 make deploy-container
@@ -141,194 +127,177 @@ make logs-container
 make stop-container
 ```
 
-### Остановка
+Контейнерный запуск использует `network_mode: host`, поэтому он рассчитан на Linux-host.
+
+### OAuth для Яндекс
+
+Для рабочего сценария авторизации проверь:
+
+- `SERVER_ENDPOINT` в `bot.env` совпадает с внешним адресом сервера
+- `HTTPS_SERVER` в `server.env` использует тот же host или `0.0.0.0:9443`
+- в Yandex OAuth `redirect_uri` равен `https://<your-host>:9443/callback`
+
+### Хранимые runtime-файлы
+
+Проект может создавать и обновлять:
+
+- `keep_chat.json`
+- `dialog_ai.json`
+- `server_tokens.json`
+- `Bot.log`
+- `Server.log`
+- `pkg/tls_config/cert/server/san.cnf`
+
+### Тесты и форматирование
 
 ```bash
-make stop
-```
-
-или
-
-```bash
-make stop-systemd
-```
-
-## 🧪 Тестирование
-
-```bash
+make fmt
 make test
 ```
 
-## 📁 Структура проекта
+### Структура проекта
 
-```
+```text
 TgBOT/
-├── cmd/                      # Точки входа в приложение
-│   ├── server/               # Сервер для OAuth авторизации
-│   └── tgbot/                # Telegram бот
-├── internal/                 # Внутренний код приложения
-│   ├── app/                  # Инициализация и запуск приложений
-│   ├── logcfg/               # Конфигурация логирования
-│   ├── server/               # Компоненты сервера
-│   └── tg_bot/               # Компоненты Telegram бота
-├── pkg/                      # Публичные пакеты
-│   └── tls_config/           # Конфигурация TLS
-└── makefile                  # Файл сборки проекта
+├── cmd/
+│   ├── server/
+│   └── tgbot/
+├── internal/
+│   ├── app/
+│   ├── logcfg/
+│   ├── server/
+│   └── tg_bot/
+├── pkg/
+│   └── tls_config/
+├── bot.env.example
+├── server.env.example
+├── Dockerfile
+├── docker-compose.yml
+└── makefile
 ```
 
-## 🤝 Вклад в проект
+### Контакты
 
-Вклады приветствуются! Пожалуйста, следуйте этим шагам:
-
-1. Форкните репозиторий
-2. Создайте ветку для вашей функции (`git checkout -b feature/amazing-feature`)
-3. Зафиксируйте ваши изменения (`git commit -m 'Add some amazing feature'`)
-4. Отправьте изменения в ветку (`git push origin feature/amazing-feature`)
-5. Откройте Pull Request
-
-## 📄 Лицензия
-
-## 📞 Контакты
-
-Имя - [Denis Khanov](https://t.me/DenKhan)
-
-Ссылка на проект: [https://github.com/DenisKhanov/TgBOT](https://github.com/DenisKhanov/TgBOT)
+- Telegram: [Denis Khanov](https://t.me/DenKhan)
+- Repository: [github.com/DenisKhanov/TgBOT](https://github.com/DenisKhanov/TgBOT)
 
 ---
 
-# TgBOT - Multifunctional Telegram Bot
+## English
 
-![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)
-![Go](https://img.shields.io/badge/Go-1.16+-00ADD8?logo=go)
+### Overview
 
-*Читать на [русском языке](#tgbot---многофункциональный-telegram-бот)*
+`TgBOT` consists of two Go applications:
 
-## 📝 Description
+- `cmd/tgbot` - Telegram bot
+- `cmd/server` - local HTTPS OAuth server used for Yandex Smart Home authorization
 
-TgBOT2 is a multifunctional Telegram bot written in Go that provides users with various capabilities:
+The bot supports:
 
-- 🏠 **Smart Home Control** - integration with Yandex Smart Home to control devices
-- 🌐 **Text Translation** - message translation using Yandex API
-- 🎯 **Activity Recommendations** - suggestions on what to do when bored
-- 📽 **Show a link to a selection of great movies** - a link to my website with a list of movies by category.
-- 🧠 **AI mode** - interaction with the generative model.
+- Yandex Smart Home device control
+- text translation via Yandex Translate API
+- generative replies through `gemini`, `deepseek`, or `openrouter`
+- external movies catalog link
+- JSON-backed user state and AI dialog history
 
-The bot uses a modern architecture with the Dependency Injection pattern for managing dependencies and clean code for
-better maintainability and extensibility.
+The bot and server communicate over mutual TLS. Certificates live in `pkg/tls_config/cert/`.
 
-## 🚀 Features
+### Requirements
 
-- **Yandex Smart Home Integration**
-    - OAuth authorization
-    - Device listing
-    - Device control (on/off)
-
-- **Text Translation**
-    - Automatic language detection
-    - Text translation using Yandex API
-
-- **Activity Recommendations**
-    - Interesting activity suggestions
-    - Various activity categories
-
-- **Interaction with generative models**
-  - Can I ask an AI a question
-
-## 🛠️ Technologies
-
-- **Go** - main programming language
-- **Telegram Bot API** - for Telegram interaction
-- **Yandex API** - for translation and smart home control
-- **TLS** - for secure connections
-- **Logrus** - for logging
-
-## 📋 Requirements
-
-- Go 1.16 or higher
-- Internet access
+- Go `1.25+` for local builds
+- `make`
+- Docker and Docker Compose for container deployment
 - Telegram bot token
-- Yandex API tokens (for translation and smart home)
+- Yandex OAuth client id / secret
+- Yandex Translate API key
+- generative provider API key
 
-## 📥 Installation
+### Quick start
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/DenisKhanov/TgBOT.git
-   cd TgBOT
-   ```
+```bash
+git clone https://github.com/DenisKhanov/TgBOT.git
+cd TgBOT
+cp bot.env.example bot.env
+cp server.env.example server.env
+```
 
-2. Configure TLS certificate generation:
-   ```
-    In the /pkg/tls_config/cert/server/san.cnf file 
-   edit the line
-   ```
-   `[alt_names]`
+Fill in real values in `bot.env` and `server.env`.
 
-   `IP.1 = 176.108.251.250 #this need be ip address your server`
-   ```
-   Enter the external ip address of your server here,
-   to generate the correct certificates
-   ```
+You do not need to edit `san.cnf` manually. `make gen-certs`, `make run`, and
+`make deploy-container` automatically create `pkg/tls_config/cert/server/san.cnf` from
+`pkg/tls_config/cert/server/san.cnf.example` and sync `CN` / `SAN` with
+`SERVER_ENDPOINT` and `HTTPS_SERVER`.
 
-## ⚙️ Configuration
+### Configuration
 
-Before running, you need to configure:
+Important variables in `bot.env`:
 
-1. Create a `server.env` file with the following content:
-   ```
-   LOG_LEVEL=info (уровень_логирования)
-   LOG_FILE_NAME=Server.log (имя_файла_для_сохранения_логов)
-   OAUTH_ENDPOINT=https://oauth.yandex.ru/token (путь_для_получения_токена_умного_дома)
-   HTTPS_SERVER=localhost:8080 (адрес_на_котором_запускается_сервер)
-   SERVER_CERT_FILE=/pkg/tls_config/cert/server/server.crt (путь_TLS_к_ключам_и_сертификатам)
-   SERVER_KEY_FILE=/pkg/tls_config/cert/server/server.key (путь_TLS_к_ключам_и_сертификатам)
-   SERVER_CA_FILE=/pkg/tls_config/cert/server/ca.crt (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_ID=_______________________ (ID_внешнего_приложения_умного_дома https://oauth.yandex.ru/client) 
-   CLIENT_SECRET=________________________ (secret_внешнего_приложения_умного_дома https://oauth.yandex.ru/client) 
-   API_KEY=__________________________ (ключ_для_упрощенной_блокировки_несанкционированного_доступа_к_серверу)
-   ```
+- `TOKEN_BOT` - Telegram bot token
+- `SERVER_ENDPOINT` - OAuth server endpoint, for example `https://example.com:9443`
+- `CLIENT_ID` - Yandex OAuth client id
+- `OWNER_ID` - Telegram user id for owner-only actions
+- `TRANSLATE_API_KEY` - Yandex Translate key
+- `GENERATIVE_NAME` - `gemini`, `deepseek`, or `openrouter`
+- `GENERATIVE_API_KEY` - API key for the selected provider
+- `GENERATIVE_MODEL` - provider model name
+- `MOVIES_URL` - external movies catalog URL
+- `CLIENT_CERT_FILE`, `CLIENT_KEY_FILE`, `CLIENT_CA_FILE` - mTLS certificate paths
+- `API_KEY` - shared key used when the bot talks to the local server
 
-2. Create a `bot.env` file with the following content:
-   ```
-   LOG_LEVEL=info (уровень_логирования)
-   LOG_FILE_NAME=Bot.log (имя_файла_для_сохранения_логов)
-   FILE_STORAGE_PATH=./keep_chat.json (файл_куда_сохраняется_история_состояния_чата)
-   FILE_DIALOG_HISTORY_PATH=./dialog_ai.json (файл_куда_сохраняется_история_переписки_с_ИИ)
-   TOKEN_BOT=________:_____________________ (токен_ТГ_бота)
-   TRANSLATE_API_ENDPOINT=____________________________ (ендпоинт для доступа к api переводчика. Например: https://translate.api.cloud.yandex.net/translate/v2/translate) 
-   DICTIONARY_DETECT_API_ENDPOINT=____________________________ (ендпоинт для доступа к api определителя языка текста. Например: https://translate.api.cloud.yandex.net/translate/v2/detect) 
-   SMART_HOME_ENDPOINT=____________________________ (ендпоинт для доступа к api умного дома. Например: https://api.iot.yandex.net) 
-   TRANSLATE_API_KEY=Api-Key ____________________________ (ключ_api_яндекс_переводчика)
-   GENERATIVE_NAME= ___________________ (название генеративной API. Выбор из (gemini,deepseek или openrouter))
-   GENERATIVE_MODEL= ___________________ (название конкретной генеративной модели. Например: meta-llama/llama-3-8b-instruct:free)
-   GEMINI_API_KEY=Api-Key ____________________________ (ключ_api_Gemini_генерации)
-   SERVER_ENDPOINT="https://localhost:8080" (эндпоинт_для_запроса_токена_умного_дома_у_сервера)
-   CLIENT_ID=_______________________ (ID_внешнего_приложения_умного_дома https://oauth.yandex.ru/client)
-   OWNER_ID=_______________________ (ID_владельца_бота_для_доступа_к_умному_дому)
-   CLIENT_CERT_FILE=/pkg/tls_config/cert/client/client.crt (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_KEY_FILE=/pkg/tls_config/cert/client/client.key (путь_TLS_к_ключам_и_сертификатам)
-   CLIENT_CA_FILE=/pkg/tls_config/cert/server/ca.crt (путь_TLS_к_ключам_и_сертификатам)
-   API_KEY=___________________________ (ключ_для_упрощенной_блокировки_несанкционированного_доступа_к_серверу)
-   ```
+Important variables in `server.env`:
 
-## 🚀 Running
+- `HTTPS_SERVER` - HTTPS bind address, usually `0.0.0.0:9443`
+- `OAUTH_ENDPOINT` - token exchange endpoint
+- `CLIENT_ID`, `CLIENT_SECRET` - Yandex OAuth application credentials
+- `SERVER_CERT_FILE`, `SERVER_KEY_FILE`, `SERVER_CA_FILE` - TLS file paths
+- `API_KEY` - shared key required by the bot
 
-### Normal Run
+Reference files:
+
+- `bot.env.example`
+- `server.env.example`
+
+### Make targets
 
 ```bash
 make help
-make run
+```
+
+Common commands:
+
+- `make build`
+- `make build-server`
+- `make build-bot`
+- `make gen-certs`
+- `make run`
+- `make run-server`
+- `make run-bot`
+- `make stop`
+- `make deploy-container`
+- `make logs-container`
+- `make stop-container`
+- `make start-systemd`
+- `make stop-systemd`
+- `make restart-systemd`
+
+### Local run
+
+```bash
+make gen-certs
 make run-server
 make run-bot
 ```
 
-### Run via systemd
+For one-command startup:
 
 ```bash
-make start-systemd
+make run
 ```
 
-### Run in containers
+Note: `make run` deletes `bot.env` and `server.env` after startup. For VPS deployment,
+`make run-server` / `make run-bot` or containers are usually more practical.
+
+### Container deployment
 
 ```bash
 make deploy-container
@@ -336,55 +305,56 @@ make logs-container
 make stop-container
 ```
 
-### Stopping
+Container deployment uses `network_mode: host`, so it is intended for Linux hosts.
+
+### Yandex OAuth checklist
+
+For the OAuth flow to work correctly:
+
+- `SERVER_ENDPOINT` in `bot.env` must match the public server address
+- `HTTPS_SERVER` in `server.env` should use the same host or `0.0.0.0:9443`
+- the Yandex OAuth `redirect_uri` must be `https://<your-host>:9443/callback`
+
+### Runtime files
+
+The project may create and update:
+
+- `keep_chat.json`
+- `dialog_ai.json`
+- `server_tokens.json`
+- `Bot.log`
+- `Server.log`
+- `pkg/tls_config/cert/server/san.cnf`
+
+### Tests and formatting
 
 ```bash
-make stop
-```
-
-or
-
-```bash
-make stop-systemd
-```
-
-## 🧪 Testing
-
-```bash
+make fmt
 make test
 ```
 
-## 📁 Project Structure
+### Project layout
 
-```
+```text
 TgBOT/
-├── cmd/                      # Application entry points
-│   ├── server/               # Server for OAuth authorization
-│   └── tgbot/                # Telegram bot
-├── internal/                 # Internal application code
-│   ├── app/                  # Application initialization and running
-│   ├── logcfg/               # Logging configuration
-│   ├── server/               # Server components
-│   └── tg_bot/               # Telegram bot components
-├── pkg/                      # Public packages
-│   └── tls_config/           # TLS configuration
-└── makefile                  # Project build file
+├── cmd/
+│   ├── server/
+│   └── tgbot/
+├── internal/
+│   ├── app/
+│   ├── logcfg/
+│   ├── server/
+│   └── tg_bot/
+├── pkg/
+│   └── tls_config/
+├── bot.env.example
+├── server.env.example
+├── Dockerfile
+├── docker-compose.yml
+└── makefile
 ```
 
-## 🤝 Contributing
+### Contacts
 
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-## 📞 Contact
-
-Your Name - [Denis Khanov](https://t.me/DenKhan)
-
-Project Link: [https://github.com/DenisKhanov/TgBOT](https://github.com/DenisKhanov/TgBOT)
+- Telegram: [Denis Khanov](https://t.me/DenKhan)
+- Repository: [github.com/DenisKhanov/TgBOT](https://github.com/DenisKhanov/TgBOT)
