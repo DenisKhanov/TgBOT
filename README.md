@@ -63,24 +63,23 @@ P.s.- этот проект был написан мной для личного
    cd TgBOT
    ```
 
-2. Настройте генерацию TLS сертификата:
+2. Подготовьте конфигурацию:
+   ```bash
+   cp bot.env.example bot.env
+   cp server.env.example server.env
    ```
-   В файле /pkg/tls_config/cert/server/san.cnf 
-   отредактируйте строку 
-   ```
-   `[alt_names]`
+   После этого заполните реальные значения в `bot.env` и `server.env`.
 
-   `IP.1 = 176.108.251.250 #it's ip address your server`
-   ```
-   Впишите сюда внешний ip адрес своего сервера,
-   чтобы сгенирировались верные сертификаты
-   ```
+3. `san.cnf` вручную редактировать не нужно.
+   `make gen-certs`, `make run` и `make deploy-container` автоматически создают
+   `pkg/tls_config/cert/server/san.cnf` из `pkg/tls_config/cert/server/san.cnf.example`
+   и подставляют host из `SERVER_ENDPOINT` и `HTTPS_SERVER`.
 
 ## ⚙️ Конфигурация
 
 Перед запуском необходимо настроить конфигурацию:
 
-1. Создайте файл `server.env` со следующим содержимым:
+1. Возьмите за основу `server.env.example` и настройте `server.env`:
    ```
    LOG_LEVEL=info (уровень_логирования)
    LOG_FILE_NAME=Server.log (имя_файла_для_сохранения_логов)
@@ -94,7 +93,7 @@ P.s.- этот проект был написан мной для личного
    API_KEY=__________________________ (ключ_для_упрощенной_блокировки_несанкционированного_доступа_к_серверу)
    ```
 
-2. Создайте файл `bot.env` со следующим содержимым:
+2. Возьмите за основу `bot.env.example` и настройте `bot.env`:
    ```
    LOG_LEVEL=info (уровень_логирования)
    LOG_FILE_NAME=Bot.log (имя_файла_для_сохранения_логов)

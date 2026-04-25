@@ -26,6 +26,7 @@
 /pkg/tls_config/cert/server/*.csr
 /pkg/tls_config/cert/server/*.key
 /pkg/tls_config/cert/server/*.srl
+/pkg/tls_config/cert/server/san.cnf
 
 # IDE files
 /.idea/.name

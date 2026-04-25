@@ -18,6 +18,7 @@ BOT_LOG := bot.log
 SERVER_CERT_GEN := pkg/tls_config/cert/server
 BOT_CERT_GEN := pkg/tls_config/cert/client
 SAN_CNF := $(SERVER_CERT_GEN)/san.cnf
+SAN_CNF_TEMPLATE := $(SERVER_CERT_GEN)/san.cnf.example
 TOKEN_STORAGE := server_tokens.json
 
 DOCKER_COMPOSE := docker compose
@@ -29,7 +30,7 @@ SYSTEMD_BOT_ENV := /etc/systemd/system/tgbot.env
 .DEFAULT_GOAL := help
 
 .PHONY: help all build build-server build-bot deps fmt test clean \
-	gen-certs sync-san-cnf run run-server run-bot start-server start-bot \
+	gen-certs ensure-san-cnf sync-san-cnf run run-server run-bot start-server start-bot \
 	stop stop-server stop-bot prepare-runtime-files deploy-container \
 	stop-container logs-container start-systemd stop-systemd restart-systemd
 
@@ -61,7 +62,13 @@ clean: ## Remove binaries and logs
 prepare-runtime-files: ## Create missing runtime state and log files
 	@touch $(SERVER_LOG) $(BOT_LOG) $(TOKEN_STORAGE) keep_chat.json dialog_ai.json
 
-sync-san-cnf: ## Sync CN and SAN values in san.cnf from bot.env and server.env
+ensure-san-cnf: ## Create san.cnf from template if it is missing
+	@if [ ! -f $(SAN_CNF) ]; then \
+		cp $(SAN_CNF_TEMPLATE) $(SAN_CNF); \
+		echo "Created $(SAN_CNF) from $(SAN_CNF_TEMPLATE)"; \
+	fi
+
+sync-san-cnf: ensure-san-cnf ## Sync CN and SAN values in san.cnf from bot.env and server.env
 	@set -eu; \
 	bot_host=$$(awk -F= '/^SERVER_ENDPOINT=/{print $$2}' $(BOT_ENV) | sed -E 's#^https?://##; s#/.*##; s#:[0-9]+$$##'); \
 	server_host=$$(awk -F= '/^HTTPS_SERVER=/{print $$2}' $(SERVER_ENV) | sed -E 's#/.*##; s#:[0-9]+$$##'); \
