@@ -122,13 +122,24 @@ P.s.- этот проект был написан мной для личного
 ### Обычный запуск
 
 ```bash
+make help
 make run
+make run-server
+make run-bot
 ```
 
 ### Запуск через systemd
 
 ```bash
 make start-systemd
+```
+
+### Запуск в контейнерах
+
+```bash
+make deploy-container
+make logs-container
+make stop-container
 ```
 
 ### Остановка
@@ -306,13 +317,24 @@ Before running, you need to configure:
 ### Normal Run
 
 ```bash
+make help
 make run
+make run-server
+make run-bot
 ```
 
 ### Run via systemd
 
 ```bash
 make start-systemd
+```
+
+### Run in containers
+
+```bash
+make deploy-container
+make logs-container
+make stop-container
 ```
 
 ### Stopping
