@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/models"
@@ -50,7 +51,6 @@ func (d *AiDialogHistory) LoadDialogFromFile() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Читаем файл dialogs.json
 	data, err := os.ReadFile(d.storageFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -58,6 +58,11 @@ func (d *AiDialogHistory) LoadDialogFromFile() error {
 			return nil
 		}
 		return fmt.Errorf("failed to read dialog history from file %s: %w", d.storageFilePath, err)
+	}
+
+	if len(data) == 0 {
+		logrus.Infof("Dialog history file %s is empty, starting with empty history", d.storageFilePath)
+		return nil
 	}
 
 	if err = json.Unmarshal(data, &d.dialogHistory); err != nil {
@@ -174,14 +179,28 @@ func (d *AiDialogHistory) SaveBatchToFile() error {
 
 	startTime := time.Now()
 
-	data, err := json.MarshalIndent(d.dialogHistory, "", "  ")
+	tempPath := d.storageFilePath + ".tmp"
+	file, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to marshal dialog history: %w", err)
+		return fmt.Errorf("failed to open temp file %s: %w", tempPath, err)
 	}
+	defer func() {
+		if err = file.Close(); err != nil {
+			logrus.WithError(err).Errorf("Failed to close file: %v", err)
+		}
+	}()
 
-	// Записываем в файл
-	if err := os.WriteFile(d.storageFilePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write dialog history to file %s: %w", d.storageFilePath, err)
+	writer := bufio.NewWriter(file)
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	if err = encoder.Encode(d.dialogHistory); err != nil {
+		return fmt.Errorf("failed to encode dialog history to temp file %s: %w", tempPath, err)
+	}
+	if err = writer.Flush(); err != nil {
+		return fmt.Errorf("failed to flush temp file %s: %w", tempPath, err)
+	}
+	if err = os.Rename(tempPath, d.storageFilePath); err != nil {
+		return fmt.Errorf("failed to rename temp file %s to %s: %w", tempPath, d.storageFilePath, err)
 	}
 
 	elapsedTime := time.Since(startTime)

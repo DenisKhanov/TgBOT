@@ -19,6 +19,7 @@ type Config struct {
 	EnvClientId      string // For access to request token from Yandex Home, only to an owner
 	EnvClientSecret  string // For access to request token from Yandex Home, only to an owner
 	EnvApiKey        string // Key for take token TGBot agent
+	EnvTokenStorage  string // Path to persisted OAuth token storage
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
@@ -40,6 +41,10 @@ func NewConfig() (*Config, error) {
 	config.EnvClientId = os.Getenv("CLIENT_ID")
 	config.EnvClientSecret = os.Getenv("CLIENT_SECRET")
 	config.EnvApiKey = os.Getenv("API_KEY")
+	config.EnvTokenStorage = os.Getenv("TOKEN_STORAGE_PATH")
+	if config.EnvTokenStorage == "" {
+		config.EnvTokenStorage = "server_tokens.json"
+	}
 
 	return config, nil
 }

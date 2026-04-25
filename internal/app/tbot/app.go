@@ -60,15 +60,16 @@ func (a *App) initConfig(_ context.Context) error {
 		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 	a.config = cfg
-	logcfg.RunLoggerConfig(a.config.EnvLogsLevel, a.config.EnvLogFileName)
+	if err = logcfg.RunLoggerConfig(a.config.EnvLogsLevel, a.config.EnvLogFileName); err != nil {
+		return fmt.Errorf("configure logger: %w", err)
+	}
 	logrus.Infof("Configuration initialized with log level: %s", a.config.EnvLogsLevel)
 	return nil
 }
 
 // initServiceProvider initializes the service provider for dependency injection.
 func (a *App) initServiceProvider(_ context.Context) error {
-
-	a.serviceProvider = NewServiceProvider(
+	serviceProvider, err := NewServiceProvider(
 		a.config.EnvTranslateApiEndpoint,
 		a.config.EnvDictionaryDetectApiEndpoint,
 		a.config.EnvSmartHomeEndpoint,
@@ -85,7 +86,12 @@ func (a *App) initServiceProvider(_ context.Context) error {
 		a.config.EnvApiKey,
 		a.config.EnvClientID,
 		a.config.EnvOwnerID,
+		a.config.EnvMoviesURL,
 	)
+	if err != nil {
+		return fmt.Errorf("initialize service provider: %w", err)
+	}
+	a.serviceProvider = serviceProvider
 	logrus.Info("Service provider initialized")
 	return nil
 }
@@ -152,13 +158,15 @@ func (a *App) runTelegramBot() {
 			return
 
 		case <-ticker.C:
-			if err = myBot.StateRepo.SaveBatchToFile(); err != nil {
-				logrus.Errorf("Failed to save state on ticker: %v", err)
+			stateErr := myBot.StateRepo.SaveBatchToFile()
+			if stateErr != nil {
+				logrus.Errorf("Failed to save state on ticker: %v", stateErr)
 			}
-			if err = myBot.AIDialogRepo.SaveBatchToFile(); err != nil {
-				logrus.Errorf("Failed to save dialog history on ticker: %v", err)
+			dialogErr := myBot.AIDialogRepo.SaveBatchToFile()
+			if dialogErr != nil {
+				logrus.Errorf("Failed to save dialog history on ticker: %v", dialogErr)
 			}
-			if err == nil {
+			if stateErr == nil && dialogErr == nil {
 				logrus.Info("User state & AI dialog history saved successfully")
 			}
 		case <-ctx.Done():

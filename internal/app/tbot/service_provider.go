@@ -4,6 +4,8 @@ package tbot
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/api"
 	botHand "github.com/DenisKhanov/TgBOT/internal/tg_bot/api/http"
 	"github.com/DenisKhanov/TgBOT/internal/tg_bot/infra/generative"
@@ -12,7 +14,6 @@ import (
 	botServ "github.com/DenisKhanov/TgBOT/internal/tg_bot/service"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/sirupsen/logrus"
-	"sync"
 )
 
 // ServiceProvider manages the dependency injection for Telegram bot components.
@@ -28,13 +29,16 @@ type ServiceProvider struct {
 	aiDialogHistory botServ.AIDialogHistoryRepository
 
 	// Handler
-	handler botServ.Handler
+	handler    botServ.Handler
+	handlerErr error
 
 	// Bot API
-	botAPI *tgbotapi.BotAPI
+	botAPI    *tgbotapi.BotAPI
+	botAPIErr error
 
 	// Bot service
-	botService *botServ.TgBotServices
+	botService    *botServ.TgBotServices
+	botServiceErr error
 
 	// API endpoints
 	translateAPIEndpoint  string
@@ -55,9 +59,10 @@ type ServiceProvider struct {
 	clientKey  string
 	clientCa   string
 
-	apiKey   string
-	clientID string
-	ownerID  int64
+	apiKey    string
+	clientID  string
+	ownerID   int64
+	moviesURL string
 
 	boringOnce       sync.Once
 	translateOnce    sync.Once
@@ -77,10 +82,43 @@ func NewServiceProvider(
 	generativeName, generativeApiKey,
 	generativeModel, storagePath, dialogStoragePath, clientCert,
 	clientKey, clientCa, apiKey,
-	clientID string, ownerID int64,
-) *ServiceProvider {
-	if translateAPIEndpoint == "" || dictionaryAPIEndpoint == "" || smartHomeAPIEndpoint == "" || serverEndpoint == "" || translateApiKey == "" || generativeApiKey == "" || generativeName == "" || generativeModel == "" || storagePath == "" || dialogStoragePath == "" || clientCert == "" || clientKey == "" || clientCa == "" || apiKey == "" || clientID == "" || ownerID == 0 {
-		logrus.Fatal("All ServiceProvider configuration fields must be non-empty")
+	clientID string, ownerID int64, moviesURL string,
+) (*ServiceProvider, error) {
+	switch {
+	case translateAPIEndpoint == "":
+		return nil, fmt.Errorf("translateAPIEndpoint is required")
+	case dictionaryAPIEndpoint == "":
+		return nil, fmt.Errorf("dictionaryAPIEndpoint is required")
+	case smartHomeAPIEndpoint == "":
+		return nil, fmt.Errorf("smartHomeAPIEndpoint is required")
+	case serverEndpoint == "":
+		return nil, fmt.Errorf("serverEndpoint is required")
+	case translateApiKey == "":
+		return nil, fmt.Errorf("translateApiKey is required")
+	case generativeName == "":
+		return nil, fmt.Errorf("generativeName is required")
+	case generativeApiKey == "":
+		return nil, fmt.Errorf("generativeApiKey is required")
+	case generativeModel == "":
+		return nil, fmt.Errorf("generativeModel is required")
+	case storagePath == "":
+		return nil, fmt.Errorf("storagePath is required")
+	case dialogStoragePath == "":
+		return nil, fmt.Errorf("dialogStoragePath is required")
+	case clientCert == "":
+		return nil, fmt.Errorf("clientCert is required")
+	case clientKey == "":
+		return nil, fmt.Errorf("clientKey is required")
+	case clientCa == "":
+		return nil, fmt.Errorf("clientCa is required")
+	case apiKey == "":
+		return nil, fmt.Errorf("apiKey is required")
+	case clientID == "":
+		return nil, fmt.Errorf("clientID is required")
+	case ownerID == 0:
+		return nil, fmt.Errorf("ownerID is required")
+	case moviesURL == "":
+		return nil, fmt.Errorf("moviesURL is required")
 	}
 	return &ServiceProvider{
 		translateAPIEndpoint:  translateAPIEndpoint,
@@ -99,7 +137,8 @@ func NewServiceProvider(
 		apiKey:                apiKey,
 		clientID:              clientID,
 		ownerID:               ownerID,
-	}
+		moviesURL:             moviesURL,
+	}, nil
 }
 
 // BoringService returns the service for activity suggestions.
@@ -174,54 +213,53 @@ func (s *ServiceProvider) AiDialogHistoryRepository() botServ.AIDialogHistoryRep
 
 // Handler returns the HTTP handler for OAuth operations.
 func (s *ServiceProvider) Handler() (botServ.Handler, error) {
-	var err error
 	s.handlerOnce.Do(func() {
-		s.handler, err = botHand.NewHandler(s.serverEndpoint+"/login", s.clientCert, s.clientKey, s.clientCa, s.apiKey)
-		if err != nil {
-			logrus.Errorf("Failed to initialize Handler: %v", err)
-			s.handler = nil // Сброс при ошибке
+		s.handler, s.handlerErr = botHand.NewHandler(s.serverEndpoint+"/login", s.clientCert, s.clientKey, s.clientCa, s.apiKey)
+		if s.handlerErr != nil {
+			s.handler = nil
 		}
 	})
+	if s.handlerErr != nil {
+		return nil, fmt.Errorf("initialize handler: %w", s.handlerErr)
+	}
 	if s.handler == nil {
 		return nil, fmt.Errorf("handler not initialized")
 	}
-	logrus.Info("Handler initialized")
 	return s.handler, nil
 }
 
 // BotAPI returns the Telegram Bot API instance.
 func (s *ServiceProvider) BotAPI(token string) (*tgbotapi.BotAPI, error) {
-	var err error
 	s.botAPIOnce.Do(func() {
-		s.botAPI, err = tgbotapi.NewBotAPI(token)
-		if err != nil {
-			logrus.Errorf("Failed to initialize BotAPI: %v", err)
+		s.botAPI, s.botAPIErr = tgbotapi.NewBotAPI(token)
+		if s.botAPIErr != nil {
 			s.botAPI = nil
 		}
 	})
+	if s.botAPIErr != nil {
+		return nil, fmt.Errorf("initialize bot API: %w", s.botAPIErr)
+	}
 	if s.botAPI == nil {
 		return nil, fmt.Errorf("bot API not initialized")
 	}
 
-	logrus.Info("BotApi initialized")
 	return s.botAPI, nil
 }
 
 // BotService returns the main Telegram bot service.
 func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotServices, error) {
-	handler, err := s.Handler()
-	if err != nil {
-		logrus.Errorf("Failed to get handler: %v", err)
-		return nil, fmt.Errorf("bot service not initialized")
-	}
-	generativeService, err := s.GenerativeService()
-	if err != nil {
-		logrus.Errorf("Failed to get generative service: %v", err)
-		return nil, fmt.Errorf("bot service not initialized")
-	}
-	AuthURL := fmt.Sprintf("https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s/callback&state=", s.clientID, s.serverEndpoint) //следует переделать эту реализацию
-
 	s.botServiceOnce.Do(func() {
+		handler, err := s.Handler()
+		if err != nil {
+			s.botServiceErr = err
+			return
+		}
+		generativeService, err := s.GenerativeService()
+		if err != nil {
+			s.botServiceErr = err
+			return
+		}
+		AuthURL := fmt.Sprintf("https://oauth.yandex.ru/authorize?response_type=code&client_id=%s&redirect_uri=%s/callback&state=", s.clientID, s.serverEndpoint)
 		s.botService = botServ.NewTgBot(
 			s.BoringService(),
 			s.TranslateService(),
@@ -233,8 +271,14 @@ func (s *ServiceProvider) BotService(botAPI *tgbotapi.BotAPI) (*botServ.TgBotSer
 			handler,
 			AuthURL,
 			s.ownerID,
+			s.moviesURL,
 		)
-		logrus.Info("BotService initialized")
 	})
+	if s.botServiceErr != nil {
+		return nil, fmt.Errorf("initialize bot service: %w", s.botServiceErr)
+	}
+	if s.botService == nil {
+		return nil, fmt.Errorf("bot service not initialized")
+	}
 	return s.botService, nil
 }

@@ -133,7 +133,7 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device,
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := sh.client.Do(req)
 	if err != nil {
 		logrus.WithError(err).Errorf("Failed to fetch home info from %s", req.URL)
 		return nil, fmt.Errorf("failed to execute request: %w", err)
@@ -166,10 +166,18 @@ func (sh *YandexSmartHome) GetHomeInfo(token string) (map[string]*models.Device,
 	//create user's device map for using in services
 	userDevices := make(map[string]*models.Device)
 	for _, device := range response.Devices {
+		actualState := false
+		for _, capability := range device.Capabilities {
+			if capability.State.Instance == "on" {
+				actualState = capability.State.Value
+				break
+			}
+		}
+
 		userDevices[device.Name] = &models.Device{
 			Name:        device.Name,
 			ID:          device.Id,
-			ActualState: device.Capabilities[0].State.Value,
+			ActualState: actualState,
 		}
 	}
 

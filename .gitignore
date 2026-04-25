@@ -1,0 +1,39 @@
+
+# Build artifacts
+/server
+/tgbot
+*.out
+
+# Runtime logs and state
+*.log
+/Server.log
+/keep_chat.json
+/dialog_ai.json
+/server_tokens.json
+
+# Local environment and secrets
+/bot.env
+/server.env
+/Keys/
+/internal/app/tbot/bot.env
+/internal/app/tbot/server.env
+
+# TLS generated artifacts
+/pkg/tls_config/cert/client/*.crt
+/pkg/tls_config/cert/client/*.csr
+/pkg/tls_config/cert/client/*.key
+/pkg/tls_config/cert/server/*.crt
+/pkg/tls_config/cert/server/*.csr
+/pkg/tls_config/cert/server/*.key
+/pkg/tls_config/cert/server/*.srl
+
+# IDE files
+/.idea/.name
+/.idea/go.imports.xml
+/.idea/workspace.xml
+/.idea/workspace (2).xml
+
+# Local agent files
+/.codex
+/AGENTS.md
+/CLAUDE.md

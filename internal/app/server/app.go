@@ -76,7 +76,9 @@ func (a *App) initConfig(_ context.Context) error {
 		return fmt.Errorf("failed to initialize config: %w", err)
 	}
 	a.config = cfg
-	logcfg.RunLoggerConfig(a.config.EnvLogsLevel, a.config.EnvLogFileName)
+	if err = logcfg.RunLoggerConfig(a.config.EnvLogsLevel, a.config.EnvLogFileName); err != nil {
+		return fmt.Errorf("configure logger: %w", err)
+	}
 	logrus.Infof("Configuration initialized with log level: %s", a.config.EnvLogsLevel)
 	return nil
 }
@@ -87,7 +89,17 @@ func (a *App) initConfig(_ context.Context) error {
 //
 // Returns an error if service provider initialization fails.
 func (a *App) initServiceProvider(_ context.Context) error {
-	a.serviceProvider = newServiceProvider(a.config.EnvOAuthEndpoint, a.config.EnvClientId, a.config.EnvClientSecret, a.config.EnvApiKey)
+	serviceProvider, err := newServiceProvider(
+		a.config.EnvOAuthEndpoint,
+		a.config.EnvClientId,
+		a.config.EnvClientSecret,
+		a.config.EnvApiKey,
+		a.config.EnvTokenStorage,
+	)
+	if err != nil {
+		return fmt.Errorf("initialize service provider: %w", err)
+	}
+	a.serviceProvider = serviceProvider
 	logrus.Info("Service provider initialized")
 	return nil
 }
@@ -99,7 +111,10 @@ func (a *App) initServiceProvider(_ context.Context) error {
 //
 // Returns an error if server initialization fails.
 func (a *App) initHTTPSServer(_ context.Context) error {
-	myHandler := a.serviceProvider.Handler()
+	myHandler, err := a.serviceProvider.Handler()
+	if err != nil {
+		return fmt.Errorf("initialize HTTP handler: %w", err)
+	}
 
 	ginMode := gin.DebugMode
 	if a.config.EnvLogsLevel == "prod" {

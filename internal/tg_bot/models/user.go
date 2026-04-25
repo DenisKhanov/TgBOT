@@ -9,7 +9,7 @@ type UserState struct {
 	IsGenerative          bool               `json:"isGenerative"`          // Флаг состояния режима ИИ для пользователя
 	IsChangingGenModel    bool               `json:"isChangingGenModel"`    // Флаг состояния режима смены ИИ модели для пользователя
 	IsChangingHistorySize bool               `json:"isChangingHistorySize"` // Флаг состояния режима смены размера памяти ИИ
-	Token                 string             `json:"-"`                     // Токен сервиса яндекс smartphone. Не записывается в файл
+	Token                 string             `json:"token"`                 // Токен сервиса умного дома. Сохраняется вместе с состоянием пользователя.
 	Devices               map[string]*Device `json:"devices"`               // Карта устройств пользователя
 }
 

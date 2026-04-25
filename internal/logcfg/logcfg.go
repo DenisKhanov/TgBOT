@@ -18,11 +18,11 @@ import (
 // Parameters:
 //   - EnvLogs: The log level to set, provided as a string.
 //     Valid log levels are "panic", "fatal", "errors", "warn", "info", and "debug".
-func RunLoggerConfig(EnvLogsLevel, logFileName string) {
+func RunLoggerConfig(EnvLogsLevel, logFileName string) error {
 	// Parse log level from the environment variable
 	logLevel, err := logrus.ParseLevel(EnvLogsLevel)
 	if err != nil {
-		logrus.Fatal(err)
+		return fmt.Errorf("parse log level: %w", err)
 	}
 
 	// Set log level and enable reporting of caller information
@@ -48,4 +48,5 @@ func RunLoggerConfig(EnvLogsLevel, logFileName string) {
 	})
 	logrus.SetOutput(mw)
 	logrus.Infof("Logrus set level: %s", EnvLogsLevel)
+	return nil
 }

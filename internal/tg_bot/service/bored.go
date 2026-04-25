@@ -3,7 +3,7 @@
 package service
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"time"
 )
 
@@ -24,7 +24,7 @@ func NewBoringAPI(activities []string) *BoringAPI {
 	}
 	return &BoringAPI{
 		activities: activities,
-		rng:        rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)), // Seed with time
+		rng:        rand.New(rand.NewSource(time.Now().UnixNano())), // Seed with time
 	}
 }
 
@@ -34,6 +34,6 @@ func (b *BoringAPI) WhatToDo() string {
 	if len(b.activities) == 0 {
 		return "" // Or return an error if the method signature changes
 	}
-	n := b.rng.IntN(len(b.activities))
+	n := b.rng.Intn(len(b.activities))
 	return "Ты можешь " + b.activities[n]
 }

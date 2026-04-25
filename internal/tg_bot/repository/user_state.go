@@ -33,24 +33,35 @@ func NewUsersStateMap(envStoragePath string) *UsersState {
 	}
 }
 
+func (m *UsersState) getUserState(chatID int64) *models.UserState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return m.BatchBuffer[chatID]
+}
+
 // GetTranslateState return user's translate bool status
 func (m *UsersState) GetTranslateState(chatID int64) bool {
-	return m.BatchBuffer[chatID].IsTranslating
+	state := m.getUserState(chatID)
+	return state != nil && state.IsTranslating
 }
 
 // GetGenerativeState return user's generative bool status
 func (m *UsersState) GetGenerativeState(chatID int64) bool {
-	return m.BatchBuffer[chatID].IsGenerative
+	state := m.getUserState(chatID)
+	return state != nil && state.IsGenerative
 }
 
 // GetChangeModelState return user's change generative bool status
 func (m *UsersState) GetChangeModelState(chatID int64) bool {
-	return m.BatchBuffer[chatID].IsChangingGenModel
+	state := m.getUserState(chatID)
+	return state != nil && state.IsChangingGenModel
 }
 
 // GetChangeHistorySizeState return user's change history dialog size bool status
 func (m *UsersState) GetChangeHistorySizeState(chatID int64) bool {
-	return m.BatchBuffer[chatID].IsChangingHistorySize
+	state := m.getUserState(chatID)
+	return state != nil && state.IsChangingHistorySize
 }
 
 // ReadFileToMemoryURL reads user states from the storage file into the in-memory buffer.
@@ -111,16 +122,21 @@ func (m *UsersState) StoreUserState(chatID int64, currentStep, lastUserMassage, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.BatchBuffer[chatID] = &models.UserState{
-		ChatID:                chatID,
-		CurrentStep:           currentStep,
-		LastUserMessages:      lastUserMassage,
-		CallbackQueryData:     callbackQueryData,
-		IsTranslating:         isTranslating,
-		IsGenerative:          isGenerative,
-		IsChangingGenModel:    isChangingGenModel,
-		IsChangingHistorySize: isChangingHistorySize,
+	state, ok := m.BatchBuffer[chatID]
+	if !ok || state == nil {
+		state = &models.UserState{}
 	}
+
+	state.ChatID = chatID
+	state.CurrentStep = currentStep
+	state.LastUserMessages = lastUserMassage
+	state.CallbackQueryData = callbackQueryData
+	state.IsTranslating = isTranslating
+	state.IsGenerative = isGenerative
+	state.IsChangingGenModel = isChangingGenModel
+	state.IsChangingHistorySize = isChangingHistorySize
+
+	m.BatchBuffer[chatID] = state
 }
 
 // SaveUserSmartHomeInfo stores Smart Home token and device info for a user.
@@ -132,11 +148,15 @@ func (m *UsersState) SaveUserSmartHomeInfo(chatID int64, token string, userDevic
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.BatchBuffer[chatID] = &models.UserState{
-		Token:   token,
-		Devices: userDevices,
+	state, ok := m.BatchBuffer[chatID]
+	if !ok || state == nil {
+		state = &models.UserState{ChatID: chatID}
 	}
 
+	state.ChatID = chatID
+	state.Token = token
+	state.Devices = userDevices
+	m.BatchBuffer[chatID] = state
 }
 
 // GetUserSmartHomeToken retrieves the Smart Home token for a user.

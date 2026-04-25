@@ -26,7 +26,7 @@ var generativeRegistry = map[string]generativeCreator{
 func ModelFactory(generativeName, apiKey, modelName string, maxTokens int, temperature float32) (botServ.GenerativeModel, error) {
 	creator, exists := generativeRegistry[generativeName]
 	if !exists {
-		return nil, fmt.Errorf("unsupported GENERATIVE_NAME: %s (expected 'gemini' or 'deepseek')", generativeName)
+		return nil, fmt.Errorf("unsupported GENERATIVE_NAME: %s (expected 'gemini', 'deepseek', or 'openrouter')", generativeName)
 	}
 	return creator(apiKey, modelName, maxTokens, temperature)
 }

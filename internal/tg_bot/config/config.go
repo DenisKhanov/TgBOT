@@ -30,6 +30,7 @@ type Config struct {
 	EnvApiKey                      string // Key for get access to get token from server
 	EnvClientID                    string // Program ID for OAUth URL
 	EnvOwnerID                     int64  // TG owner's ID for get access to using smart home
+	EnvMoviesURL                   string // External URL with movie подборкой
 }
 
 // NewConfig initializes a new Config instance by loading environment variables from a .env file.
@@ -60,6 +61,10 @@ func NewConfig() (*Config, error) {
 	config.EnvClientCa = os.Getenv("CLIENT_CA_FILE")
 	config.EnvApiKey = os.Getenv("API_KEY")
 	config.EnvClientID = os.Getenv("CLIENT_ID")
+	config.EnvMoviesURL = os.Getenv("MOVIES_URL")
+	if config.EnvMoviesURL == "" {
+		config.EnvMoviesURL = "http://176.108.251.250:8444/"
+	}
 	if id, err = strconv.ParseInt(os.Getenv("OWNER_ID"), 10, 64); err == nil {
 		config.EnvOwnerID = id
 	} else {

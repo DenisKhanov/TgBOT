@@ -42,7 +42,8 @@ func TestRunLoggerConfig_TableDriven(t *testing.T) {
 			logrus.SetOutput(&logOutput)
 
 			// Run the logger configuration
-			RunLoggerConfig(tt.envLogs)
+			err := RunLoggerConfig(tt.envLogs, "test.log")
+			assert.NoError(t, err)
 
 			// Check log level
 			assert.Equal(t, tt.expectedLog.Level, logrus.GetLevel())
